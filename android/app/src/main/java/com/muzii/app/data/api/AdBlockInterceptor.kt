@@ -16,7 +16,9 @@ class AdBlockInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val url = chain.request().url
         val host = url.host.lowercase()
-        val path = url.pathSegments.joinToString("/").lowercase()
+        // encodedPath keeps the leading slash ("/ads/foo") that the
+        // path patterns expect; pathSegments.joinToString would not.
+        val path = url.encodedPath.lowercase()
         if (AD_HOSTS.any { host == it || host.endsWith(".$it") } ||
             AD_PATH_PATTERNS.any { path.contains(it) }
         ) {

@@ -53,7 +53,8 @@ fun SearchScreen(
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = TextSecondary,
             ),
         )
         LazyColumn(modifier = Modifier.fillMaxSize()) {

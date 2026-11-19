@@ -47,20 +47,41 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # Write a same-origin /api proxy so the web app works even if the
+      # build-time VITE_API_BASE_URL is missing (belt + braces).
+      - name: Write Pages API proxy
+        run: |
+          WORKER_URL="${{ needs.deploy-worker.outputs.worker_url }}"
+          if [ -n "$WORKER_URL" ]; then
+            echo "/api/* $WORKER_URL/api/:splat 200" > web/public/_redirects
+            echo "Wrote _redirects proxy -> $WORKER_URL"
+          else
+            echo "::warning::No Worker URL captured — web will rely on VITE_API_BASE_URL"
+          fi
       - run: npm ci && npm run build
         working-directory: web
         env:
-          VITE_API_BASE_URL: ${{ vars.WORKER_URL }}
+          VITE_API_BASE_URL: ${{ needs.deploy-worker.outputs.worker_url || vars.WORKER_URL }}
       # `pages deploy` fails with "Project not found" on first run if the
-      # Pages project doesn't exist yet — create it only when missing.
-      # No error masking: if auth is broken, this step fails loudly.
+      # Pages project doesn't exist yet. Create it; if creation reports
+      # the project already exists, verify via list and continue. Any
+      # other failure is loud.
       - name: Ensure Pages project exists
         run: |
-          if npx wrangler pages project list --json | grep -Eq '"name"[[:space:]]*:[[:space:]]*"muzii"'; then
-            echo "Pages project 'muzii' already exists."
-          else
-            echo "Creating Pages project 'muzii'..."
-            npx wrangler pages project create muzii --production-branch=mnbots
+          set +e
+          OUT=$(npx wrangler pages project create muzii --production-branch=mnbots 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUT"
+          if [ "$STATUS" -ne 0 ]; then
+            if echo "$OUT" | grep -qiE "already exists|duplicate"; then
+              echo "Pages project 'muzii' already exists — continuing."
+            elif npx wrangler pages project list 2>/dev/null | grep -qw "muzii"; then
+              echo "Pages project 'muzii' already exists — continuing."
+            else
+              echo "::error::Failed to create Pages project 'muzii'"
+              exit 1
+            fi
           fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

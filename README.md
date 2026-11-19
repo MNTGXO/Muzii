@@ -13,9 +13,29 @@ native **Android app** (Kotlin + Jetpack Compose), backed by a
 └──────────────┘      │  proxy + adblock │      └─────────────────────┘
                       └──────────────────┘
                               │
-              upstream music provider (YouTube Music via
-              InnerTube; demo catalog as automatic fallback)
+              provider chain: JioSaavn → YouTube Music
+              (InnerTube) → bundled demo catalog
 ```
+
+## Where the audio comes from (and why)
+
+`PROVIDER` in `worker/wrangler.toml` selects a **provider chain** — each
+provider is tried in order until one returns usable results
+(`worker/src/providers/index.ts`):
+
+| Order | Provider | Why |
+|---|---|---|
+| 1 | **JioSaavn** (`providers/jiosaavn.ts`) | Plain JSON API, and audio is served as permanent CDN links the Worker can proxy. Deepest catalog for Indian languages (Hindi, Malayalam, Tamil, Telugu, Punjabi…). |
+| 2 | **YouTube Music** (`providers/youtube.ts`) | Widest catalog via InnerTube, with Piped/Invidious mirrors as a second path. |
+| 3 | **Demo** (`providers/demo.ts`) | Always works — the app never hard-fails. |
+
+**Honest constraint:** YouTube refuses most InnerTube *player* calls coming
+from datacenter IPs (Cloudflare included) with "Sign in to confirm you're not
+a bot", and the `googlevideo` URLs it does return are bound to the IP that
+minted them. From a Worker that means YouTube audio is best-effort only —
+which is exactly why JioSaavn leads the chain. If you want YouTube to be the
+primary source, put a residential/mobile HTTP proxy in front of the Worker's
+upstream calls (see the client-strategy comments in `worker/src/providers/youtube.ts`).
 
 ## Why Cloudflare Workers (not Vercel)?
 
@@ -85,12 +105,14 @@ cd web && npm run build              # then deploy dist/ to Cloudflare Pages
 ```
 
 Or use the included GitHub Actions workflow (`.github/workflows/deploy.yml`) —
-add `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and a
-`WORKER_URL` variable.
+add `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets. No `WORKER_URL`
+variable is needed: the workflow captures the deployed Worker URL and writes
+a Pages `_redirects` rule so the web app's `/api/*` requests are proxied to
+the Worker same-origin.
 
 ## 📥 Download the APK
 
-Every push to `main` builds APKs in GitHub Actions
+Every push to `mnbots` builds APKs in GitHub Actions
 (`.github/workflows/build-apk.yml`):
 
 1. Open the **Actions** tab → latest **Build & Release APK** run →

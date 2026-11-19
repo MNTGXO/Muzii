@@ -2,6 +2,7 @@ package com.muzii.app.data.repository
 
 import com.muzii.app.BuildConfig
 import com.muzii.app.data.DemoCatalog
+import com.muzii.app.data.api.MuziiApi
 import com.muzii.app.data.api.MuziiApiFactory
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
@@ -11,7 +12,7 @@ import com.muzii.app.data.model.Track
  * (offline, Worker not deployed) falls back to the bundled demo catalog so
  * the app is always usable.
  */
-class MuziiRepository(private val api = MuziiApiFactory.create()) {
+class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
 
     suspend fun getCatalog(): List<Track> = runCatching {
         api.getCatalog().map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
@@ -20,6 +21,10 @@ class MuziiRepository(private val api = MuziiApiFactory.create()) {
     suspend fun getPlaylists(): List<Playlist> = runCatching {
         api.getPlaylists()
     }.getOrElse { DemoCatalog.PLAYLISTS }
+        // Playlist tracks must be streamed through the Worker too.
+        .map { pl ->
+            pl.copy(tracks = pl.tracks?.map { it.copy(streamUrl = proxiedStreamUrl(it.id)) })
+        }
 
     suspend fun search(query: String): List<Track> = runCatching {
         api.search(query).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
@@ -31,5 +36,6 @@ class MuziiRepository(private val api = MuziiApiFactory.create()) {
         }
     }
 
-    private fun proxiedStreamUrl(id: String): String = BuildConfig.API_BASE_URL + "api/stream/$id"
+    private fun proxiedStreamUrl(id: String): String =
+        BuildConfig.API_BASE_URL.trimEnd('/') + "/api/stream/$id"
 }

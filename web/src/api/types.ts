@@ -14,5 +14,7 @@ export interface Playlist {
   title: string;
   description: string;
   trackIds: string[];
+  /** Full track objects (YouTube ids aren't in the catalog). */
+  tracks?: Track[];
   gradient: string;
 }

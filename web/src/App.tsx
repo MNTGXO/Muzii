@@ -42,7 +42,12 @@ function Shell() {
         onToggleQueue={() => setShowQueue((s) => !s)}
       />
       <MobileNav page={page} onNavigate={navigate} />
-      {showNowPlaying && <NowPlaying onClose={() => setShowNowPlaying(false)} />}
+      {showNowPlaying && (
+        <NowPlaying
+          onClose={() => setShowNowPlaying(false)}
+          onOpenQueue={() => setShowQueue(true)}
+        />
+      )}
     </div>
   );
 }

@@ -16,12 +16,19 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Cloudflare Worker base URL — override with -Pmuzii.apiBaseUrl=...
-        buildConfigField(
-            "String",
-            "API_BASE_URL",
-            "\"${project.findProperty("muzii.apiBaseUrl") ?: "https://muzii.your-worker.workers.dev/"}\"",
-        )
+        // API base URL. Resolution order:
+        //   1. -Pmuzii.apiBaseUrl=https://your-worker.workers.dev/  (explicit)
+        //   2. MUZII_API_BASE_URL env var (set by CI from the deploy workflow)
+        //   3. https://muzii.pages.dev/ — the public Pages site, which
+        //      proxies /api/* to the Worker via _redirects.
+        // The old placeholder ("muzii.your-worker.workers.dev") never
+        // resolved, so the APK always fell back to the demo catalog.
+        val apiBaseUrl = (
+            project.findProperty("muzii.apiBaseUrl") as String?
+                ?: System.getenv("MUZII_API_BASE_URL")
+                ?: "https://muzii.pages.dev/"
+            ).let { if (it.endsWith("/")) it else "$it/" }
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     buildTypes {

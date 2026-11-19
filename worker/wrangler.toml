@@ -4,11 +4,14 @@ compatibility_date = "2024-09-23"
 
 [vars]
 APP_NAME = "Muzii"
-# Upstream music provider: "youtube" (YouTube Music via InnerTube) or
-# "demo" (built-in sample catalog). If the configured provider fails, the
-# Worker automatically falls back to the demo catalog.
-# See src/providers/types.ts for the provider interface.
-PROVIDER = "youtube"
+# Upstream music provider chain (see src/providers/index.ts):
+#   "jiosaavn" (default) -> JioSaavn, YouTube Music, Demo
+#   "youtube"            -> YouTube Music, JioSaavn, Demo
+#   "demo"               -> Demo only
+# JioSaavn leads because YouTube refuses most player calls from datacenter
+# IPs and its media URLs are IP-bound, while JioSaavn serves plain CDN links
+# the Worker can proxy. Every provider failure falls through to the next.
+PROVIDER = "jiosaavn"
 
 # Optional: KV namespace for catalog caching.
 # Create with: wrangler kv namespace create CATALOG

@@ -71,7 +71,7 @@ fun LibraryScreen(playlists: List<Playlist>, onOpenPlaylist: (Playlist) -> Unit)
                     Spacer(Modifier.height(8.dp))
                     Text(pl.title, color = Color.White, maxLines = 1)
                     Text(
-                        "${pl.trackIds.size} songs",
+                        "${pl.tracks?.size ?: pl.trackIds.size} songs",
                         color = TextSecondary,
                         style = MaterialTheme.typography.bodySmall,
                     )

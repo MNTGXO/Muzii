@@ -26,6 +26,10 @@ object PlayerManager {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
+    // Queue requested before the MediaController finished connecting.
+    private var pendingQueue: List<Track>? = null
+    private var pendingIndex: Int = 0
+
     private val _queue = MutableStateFlow<List<Track>>(emptyList())
     val queue: StateFlow<List<Track>> = _queue.asStateFlow()
 
@@ -51,6 +55,11 @@ object PlayerManager {
             {
                 controller = controllerFuture!!.get()
                 controller?.addListener(Listener)
+                // Play anything the user queued before connecting.
+                pendingQueue?.let { tracks ->
+                    controller?.let { startPlayback(it, tracks, pendingIndex) }
+                    pendingQueue = null
+                }
             },
             ContextCompat.getMainExecutor(context),
         )
@@ -73,8 +82,19 @@ object PlayerManager {
     }
 
     fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
-        val c = controller ?: return
         _queue.value = tracks
+        _currentIndex.value = startIndex
+        val c = controller
+        if (c == null) {
+            // Controller not connected yet — play once it is.
+            pendingQueue = tracks
+            pendingIndex = startIndex
+            return
+        }
+        startPlayback(c, tracks, startIndex)
+    }
+
+    private fun startPlayback(c: MediaController, tracks: List<Track>, startIndex: Int) {
         val items = tracks.map { track ->
             MediaItem.Builder()
                 .setUri(track.streamUrl)
