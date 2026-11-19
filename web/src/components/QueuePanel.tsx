@@ -20,12 +20,10 @@ import type { Track } from '../api/types';
  */
 function QueueRow({
   track,
-  at,
   onJump,
   actions,
 }: {
   track: Track;
-  at: number;
   onJump: () => void;
   actions?: React.ReactNode;
 }) {
@@ -62,7 +60,6 @@ function QueueRow({
         {actions}
         <span className="track-duration hide-sm">{formatTime(track.durationSec)}</span>
       </span>
-      <span className="sr-only">{at}</span>
     </div>
   );
 }
@@ -74,8 +71,15 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
 
   // Disliked songs never appear in the visible list, so "next" is honest.
   const visible = (track: Track) => !taste.dislike.includes(track.id);
-  const upNext = queue.slice(index + 1).filter(visible);
-  const earlier = queue.slice(0, index).filter(visible);
+  // Keep the real queue position alongside each row. `queue.indexOf(track)`
+  // was used before and is wrong the moment two rows share a track id or a
+  // song title — every action then targeted the first match.
+  const upNext = queue
+    .map((track, at) => ({ track, at }))
+    .filter(({ track, at }) => at > index && visible(track));
+  const earlier = queue
+    .map((track, at) => ({ track, at }))
+    .filter(({ track, at }) => at < index && visible(track));
 
   return (
     <aside className="queue-panel" role="dialog" aria-label="Up next">
@@ -126,15 +130,11 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
               End of the queue - a new set will load as this song ends.
             </p>
           )}
-          {upNext.map((track, offset) => {
-            // Recover the real queue index: `upNext` is filtered, so the
-            // offset alone would point at the wrong row.
-            const at = queue.indexOf(track);
+          {upNext.map(({ track, at }) => {
             return (
               <QueueRow
                 key={`${track.id}-${at}`}
                 track={track}
-                at={offset}
                 onJump={() => jumpTo(at)}
                 actions={
                   <>
@@ -167,8 +167,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
         {earlier.length > 0 && (
           <section className="queue-section">
             <h4>Earlier</h4>
-            {earlier.map((track) => {
-              const at = queue.indexOf(track);
+            {earlier.map(({ track, at }) => {
               return (
                 <div className="queue-row dim" key={`${track.id}-${at}`}>
                   <button className="queue-play" onClick={() => jumpTo(at)}>

@@ -20,9 +20,34 @@ export function cleanTitle(title: string): string {
     // "(K.J.Yesudas) (from "Balettan")", "[Remastered 2011]", "- Reprise"
     .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
     .replace(/\s-\s.*$/, ' ')
+    // Stray separators left behind by bracket-stripping (", ", " / ").
+    .replace(/[|/\\,]+/g, ' ')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Trailing version words that don't make a song a different song. */
+const VARIANT_SUFFIXES = [
+  'male', 'female', 'male version', 'female version', 'duet', 'solo',
+  'reprise', 'remix', 'remastered', 'remaster', 'unplugged', 'acoustic',
+  'live', 'cover', 'instrumental', 'karaoke', 'extended', 'edit',
+  'version', 'from', 'movie', 'film', 'full song', 'lyrical', 'video song',
+];
+
+/**
+ * Identity of a song. Mirrors songKey() in worker/src/radio.ts so the server
+ * and the client always agree on "is this the same song?".
+ */
+export function songKey(title: string): string {
+  const base = cleanTitle(title);
+  if (!base) return base;
+  for (const suffix of VARIANT_SUFFIXES) {
+    if (!base.endsWith(' ' + suffix)) continue;
+    const stripped = base.slice(0, base.length - suffix.length - 1).trim();
+    if (stripped.length >= 3) return stripped;
+  }
+  return base;
 }
 
 /**
@@ -35,7 +60,7 @@ export function cleanTitle(title: string): string {
  * same queue. (Mirrored in worker/src/radio.ts.)
  */
 export function trackKey(track: Track): string {
-  return cleanTitle(track.title);
+  return songKey(track.title);
 }
 
 export interface TrackHistory {

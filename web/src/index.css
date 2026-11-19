@@ -38,6 +38,26 @@ button {
 
 button:disabled { opacity: 0.45; cursor: default; }
 
+/*
+ * Visually hidden but still announced by screen readers.
+ *
+ * This class was referenced in the queue panel before it existed, so the
+ * element it hid (a debug row index) rendered as a literal "0 1 2 3" column
+ * down the right side of Up Next. Defining it means that mistake can't come
+ * back as visible text.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 input { font: inherit; color: inherit; }
 
 :focus-visible {
@@ -860,6 +880,14 @@ input[type='range']::-moz-range-thumb {
   padding: 6px 4px;
   border-radius: 10px;
   transition: background 0.15s;
+  /* Let the title column claim the leftover width; without min-width:0 a
+     flex child refuses to shrink and long titles force the action buttons
+     out of the row instead of ellipsising. */
+  min-width: 0;
+}
+.queue-row .track-meta {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .queue-row:hover { background: var(--surface); }
 .queue-row.active { background: var(--surface); }
@@ -868,11 +896,35 @@ input[type='range']::-moz-range-thumb {
 .queue-row-actions {
   display: flex;
   gap: 2px;
+  flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s;
 }
 .queue-row:hover .queue-row-actions,
 .queue-row:focus-within .queue-row-actions { opacity: 1; }
+
+/*
+ * On a phone there is no hover, so these buttons must be visible — but five
+ * 26px buttons next to the title is what truncated "Minnum Minnamai" to
+ * "Minnum Minna...". Show the two taste buttons (which are the ones that
+ * matter for shaping the feed) and keep reorder/remove for pointer devices.
+ */
+@media (hover: none), (max-width: 720px) {
+  .queue-row-actions {
+    opacity: 1;
+    gap: 0;
+  }
+  .queue-row-actions button {
+    width: 24px;
+    height: 24px;
+  }
+  .queue-row-actions button[aria-label='Move up'],
+  .queue-row-actions button[aria-label='Move down'],
+  .queue-row-actions button[aria-label='Remove'] {
+    display: none;
+  }
+}
+
 .queue-row-actions button {
   display: grid;
   place-items: center;

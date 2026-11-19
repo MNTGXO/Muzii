@@ -173,7 +173,13 @@ object PlayerManager {
         exhaustRequested = false
         if (tracks.isEmpty()) return
         val c = controller
-        val fresh = tracks.filter { !playedIds.contains(it.id) && !playedKeys.contains(keyOf(it)) }
+        val seenKeys = HashSet<String>()
+        val fresh = tracks.filter {
+            !playedIds.contains(it.id) &&
+                !playedKeys.contains(keyOf(it)) &&
+                // Also dedupe within the batch itself (same song, two rows).
+                seenKeys.add(keyOf(it))
+        }
         if (fresh.isEmpty()) return
 
         _queue.value = _queue.value + fresh
@@ -192,22 +198,30 @@ object PlayerManager {
 
     fun playQueue(tracks: List<Track>, startIndex: Int = 0, radio: Boolean = false) {
         if (tracks.isEmpty()) return
+        // Collapse versions of one song before they reach the queue: catalogs
+        // list "Minnum Minnamai", "... (Male)", "... (Female)" as separate
+        // tracks, which filled the queue with the same song.
+        val anchor = tracks.getOrNull(startIndex) ?: tracks.first()
+        val seen = HashSet<String>()
+        val unique = tracks.filter { seen.add(keyOf(it)) }
+        val start = unique.indexOfFirst { it.id == anchor.id }.coerceAtLeast(0)
+
         _isRadio.value = radio
         exhaustRequested = false
-        _queue.value = tracks
-        _currentIndex.value = startIndex
-        tracks.getOrNull(startIndex)?.let { markPlayed(it) }
+        _queue.value = unique
+        _currentIndex.value = start
+        unique.getOrNull(start)?.let { markPlayed(it) }
 
         val c = controller
         if (c == null) {
             // Controller not connected yet — play once it is.
-            pendingQueue = tracks
-            pendingIndex = startIndex
+            pendingQueue = unique
+            pendingIndex = start
             return
         }
         // The session can die while the app is backgrounded; a dead controller
         // must not crash the UI thread.
-        runCatching { startPlayback(c, tracks, startIndex) }
+        runCatching { startPlayback(c, unique, start) }
     }
 
     /** Start a song radio: the seed plays, then the app fills the rest. */
@@ -245,13 +259,34 @@ object PlayerManager {
      * artist let each variant into the queue. Mirrors normalizeKey() in
      * worker/src/radio.ts and trackKey() in web/src/player/queue.ts.
      */
-    private fun keyOf(track: Track): String = track.title
-        .lowercase()
-        .replace(Regex("\\([^)]*\\)|\\[[^\\]]*\\]"), " ")
-        .replace(Regex("\\s-\\s.*$"), " ")
-        .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    private fun keyOf(track: Track): String {
+        val base = track.title
+            .lowercase()
+            .replace(Regex("\\([^)]*\\)|\\[[^\\]]*\\]"), " ")
+            .replace(Regex("\\s-\\s.*$"), " ")
+            .replace(Regex("[|/\\\\,]+"), " ")
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        for (suffix in VARIANT_SUFFIXES) {
+            if (!base.endsWith(" $suffix")) continue
+            val stripped = base.dropLast(suffix.length + 1).trim()
+            // Never reduce a title to nothing: "Male" is a real song title.
+            if (stripped.length >= 3) return stripped
+        }
+        return base
+    }
+
+    /**
+     * Trailing version words that don't make a song a different song.
+     * Mirrors songKey() in worker/src/radio.ts and web/src/player/queue.ts.
+     */
+    private val VARIANT_SUFFIXES = listOf(
+        "male", "female", "male version", "female version", "duet", "solo",
+        "reprise", "remix", "remastered", "remaster", "unplugged", "acoustic",
+        "live", "cover", "instrumental", "karaoke", "extended", "edit",
+        "version", "from", "movie", "film", "full song", "lyrical", "video song",
+    )
 
     private fun markPlayed(track: Track) {
         playedIds.add(track.id)

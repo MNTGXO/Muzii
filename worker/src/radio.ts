@@ -37,9 +37,42 @@ export function cleanTitle(title: string): string {
     // "(K.J.Yesudas) (from "Balettan")", "[Remastered 2011]", "- Reprise"
     .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
     .replace(/\s-\s.*$/, ' ')
+    // Stray separators that bracket-stripping leaves behind (", ", " / ").
+    .replace(/[|/\\,]+/g, ' ')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Identity of a song: the title, with an optional variant suffix removed.
+ *
+ * Catalogs list the same song as "Minnum Minnamai", "Minnum Minnamai (Male)",
+ * "Minnum Minnamai (Female)", "Minnum Minnamai - Reprise". After stripping
+ * brackets they all reduce to the same title, but some entries also survive
+ * with a bare suffix ("Minnum Minnamai male") when the bracket was missing, so
+ * trailing version words are dropped too.
+ *
+ * Only *trailing* version words go — a title that is genuinely "Male" on its
+ * own keeps it, because there would be nothing left otherwise.
+ */
+const VARIANT_SUFFIXES = [
+  'male', 'female', 'male version', 'female version', 'duet', 'solo',
+  'reprise', 'remix', 'remastered', 'remaster', 'unplugged', 'acoustic',
+  'live', 'cover', 'instrumental', 'karaoke', 'extended', 'edit',
+  'version', 'from', 'movie', 'film', 'full song', 'lyrical', 'video song',
+];
+
+export function songKey(title: string): string {
+  const base = cleanTitle(title);
+  if (!base) return base;
+  for (const suffix of VARIANT_SUFFIXES) {
+    if (!base.endsWith(' ' + suffix)) continue;
+    const stripped = base.slice(0, base.length - suffix.length - 1).trim();
+    // Never reduce a title to nothing: "Male" is a real song title somewhere.
+    if (stripped.length >= 3) return stripped;
+  }
+  return base;
 }
 
 /**
@@ -57,7 +90,7 @@ export function cleanTitle(title: string): string {
  * instead of two near-identical uploads is the better failure.
  */
 export function normalizeKey(title: string, _artist?: string): string {
-  return cleanTitle(title);
+  return songKey(title);
 }
 
 function seededShuffle<T>(items: T[], seed: string): T[] {
