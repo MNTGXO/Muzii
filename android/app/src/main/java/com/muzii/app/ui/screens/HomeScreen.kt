@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.muzii.app.ui.components.ArtworkBox
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
 import com.muzii.app.ui.components.TrackRow

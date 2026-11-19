@@ -49,13 +49,27 @@ jobs:
         working-directory: android
         env:
           MUZII_API_BASE_URL: ${{ vars.WORKER_URL || 'https://muzii.pages.dev/' }}
-        run: gradle assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
+        # pipefail matters: a pipeline reports only its LAST command's status,
+        # so without this tee succeeds, the step goes green, and a failed
+        # compile only surfaces later as "Rename APK: no such file".
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
 
       # Rename before uploading so the downloaded file is obviously *the*
       # app, not `app-release.apk`.
       - name: Rename APK
         run: |
           mkdir -p dist
+          # Name the real cause instead of `cp: no such file`, and surface the
+          # tail of the compile log so the actual Kotlin error is visible.
+          if ! compgen -G "android/app/build/outputs/apk/release/*.apk" > /dev/null; then
+            echo "::error::No release APK was produced - the build failed."
+            echo "----- last 80 lines of the gradle log -----"
+            tail -n 80 /tmp/build.log || true
+            exit 1
+          fi
           cp android/app/build/outputs/apk/release/*.apk dist/muzii.apk
           ls -lh dist/
 

@@ -42,3 +42,14 @@ export interface JamState {
   /** True when this client's token is the room's host token. */
   youAreHost?: boolean;
 }
+
+/**
+ * One-shot setup data for a jam created from the player: the songs that were
+ * playing and how far into the current one. Not part of the room's own state -
+ * the server copies it on create.
+ */
+export interface JamSeed {
+  queue?: Track[];
+  index?: number;
+  positionMs?: number;
+}

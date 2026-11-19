@@ -72,6 +72,8 @@ fun MuziiNav(
     val isPlaying by PlayerManager.isPlaying.collectAsState()
     val positionMs by PlayerManager.positionMs.collectAsState()
     val durationMs by PlayerManager.durationMs.collectAsState()
+    val sleepRemainingMs by PlayerManager.sleepRemainingMs.collectAsState()
+    val sleepAtTrackEnd by PlayerManager.sleepAtTrackEnd.collectAsState()
     val currentTrack = queue.getOrNull(currentIndex)
 
     // Progress ticker while playing.
@@ -238,6 +240,9 @@ fun MuziiNav(
             disliked = dislikedIds.contains(currentTrack.id),
             onToggleLike = { onToggleLike(currentTrack) },
             onToggleDislike = { onToggleDislike(currentTrack) },
+            sleepRemainingMs = sleepRemainingMs,
+            sleepAtTrackEnd = sleepAtTrackEnd,
+            onSetSleepTimer = { PlayerManager.setSleepTimer(it) },
         )
     }
 }

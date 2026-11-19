@@ -14,7 +14,7 @@ import { usePlayer } from './player/PlayerContext';
 import { getCatalogForLanguages } from './api/client';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { TasteProvider, useTaste } from './taste/TasteContext';
-import type { Track } from './api/types';
+import type { JamSeed, Track } from './api/types';
 
 type View =
   | { type: 'page'; page: Page }
@@ -95,10 +95,21 @@ function Shell() {
     setView({ type: 'playlist', id });
   }, []);
 
-  const openJam = useCallback((code: string | null) => {
-    location.hash = code ? `#/jam/${code}` : '#/jam';
-    setView({ type: 'jam', code });
-  }, []);
+  /**
+   * `seed` carries the player's queue into a jam created from the player.
+   * Held in state rather than the URL: it is one-shot setup data, not
+   * something worth putting in a shareable link.
+   */
+  const [jamSeed, setJamSeed] = useState<JamSeed | null>(null);
+
+  const openJam = useCallback(
+    (code: string | null, seed: JamSeed | null = null) => {
+      setJamSeed(seed);
+      location.hash = code ? `#/jam/${code}` : '#/jam';
+      setView({ type: 'jam', code });
+    },
+    [],
+  );
 
   const openJamCode = useCallback((code: string) => {
     location.hash = `#/jam/${code}`;
@@ -134,6 +145,8 @@ function Shell() {
             onBack={() => navigate('home')}
             onOpenCode={openJamCode}
             catalog={catalog}
+            seed={jamSeed}
+            onSeedUsed={() => setJamSeed(null)}
           />
         ) : view.type === 'playlist' ? (
           <PlaylistPage playlistId={view.id} onBack={() => navigate('library')} />
@@ -147,6 +160,8 @@ function Shell() {
             onBack={() => navigate('home')}
             onOpenCode={openJamCode}
             catalog={catalog}
+            seed={jamSeed}
+            onSeedUsed={() => setJamSeed(null)}
           />
         ) : (
           <LibraryPage onOpenPlaylist={openPlaylist} />
@@ -163,6 +178,25 @@ function Shell() {
         <NowPlaying
           onClose={() => setShowNowPlaying(false)}
           onOpenQueue={() => setShowQueue(true)}
+          /*
+           * Jam straight from the player, taking the live queue with it.
+           *
+           * `positionMs` is included because the room's host is the speaker:
+           * without it a jam seeded from a song you're 2:18 into would make
+           * everyone (and you) restart from 0:00.
+           */
+          onStartJam={
+            player.current
+              ? () => {
+                  setShowNowPlaying(false);
+                  openJam(null, {
+                    queue: player.queue,
+                    index: player.index,
+                    positionMs: Math.round(player.progress * 1000),
+                  });
+                }
+              : undefined
+          }
         />
       )}
     </div>

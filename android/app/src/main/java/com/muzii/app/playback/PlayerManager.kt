@@ -14,6 +14,12 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.muzii.app.data.model.Track
 import com.muzii.app.data.taste.PlayLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +42,10 @@ object PlayerManager {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
+    /** Drives the sleep-timer countdown; cancelled when the timer is re-armed. */
+    private var sleepJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     // Queue requested before the MediaController finished connecting.
     private var pendingQueue: List<Track>? = null
     private var pendingIndex: Int = 0
@@ -57,6 +67,13 @@ object PlayerManager {
 
     private val _buffering = MutableStateFlow(false)
     val buffering: StateFlow<Boolean> = _buffering.asStateFlow()
+
+    /** Sleep timer: null when off, else ms remaining (a 'track' timer = -1). */
+    private val _sleepRemainingMs = MutableStateFlow<Long?>(null)
+    val sleepRemainingMs: StateFlow<Long?> = _sleepRemainingMs.asStateFlow()
+    /** Set when the timer is "end of track" rather than a countdown. */
+    private val _sleepAtTrackEnd = MutableStateFlow(false)
+    val sleepAtTrackEnd: StateFlow<Boolean> = _sleepAtTrackEnd.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
@@ -160,6 +177,11 @@ object PlayerManager {
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
             ) {
                 _queue.value.getOrNull(_currentIndex.value)?.let { logListen(it) }
+            }
+            // "End of track" sleep timer: stop on the boundary between songs,
+            // never mid-line. Pausing keeps the notification alive.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                sleepTimerHitTrackEnd()
             }
             _currentIndex.value = controller?.currentMediaItemIndex ?: 0
             _error.value = null
@@ -328,6 +350,55 @@ object PlayerManager {
         }
         runCatching { if (c.isPlaying) c.pause() else c.play() }
             .onFailure { _error.value = "Playback is not available right now" }
+    }
+
+    /**
+     * Arm the sleep timer: [minutes] > 0 for a countdown, 0 for "end of track",
+     * and null to cancel.
+     *
+     * The timer **pauses**; it never stops or releases the session. That is
+     * what keeps the media notification alive so the listener can resume from
+     * the notification bar at the spot they fell asleep at. Calling stop()
+     * here would tear the session down and take the notification with it.
+     */
+    fun setSleepTimer(minutes: Int?) {
+        sleepJob?.cancel()
+        sleepJob = null
+        if (minutes == null) {
+            _sleepRemainingMs.value = null
+            _sleepAtTrackEnd.value = false
+            return
+        }
+        if (minutes <= 0) {
+            // 0 means "when this track ends".
+            _sleepRemainingMs.value = null
+            _sleepAtTrackEnd.value = true
+            return
+        }
+        _sleepAtTrackEnd.value = false
+        val totalMs = minutes * 60_000L
+        _sleepRemainingMs.value = totalMs
+        sleepJob = scope.launch {
+            val endsAt = System.currentTimeMillis() + totalMs
+            while (true) {
+                val left = endsAt - System.currentTimeMillis()
+                if (left <= 0) break
+                _sleepRemainingMs.value = left
+                delay(500)
+            }
+            _sleepRemainingMs.value = null
+            // Pause, not stop: the notification and session stay usable.
+            runCatching { controller?.pause() }
+        }
+    }
+
+    /** True when a track has just ended and an "end of track" timer fires. */
+    private fun sleepTimerHitTrackEnd(): Boolean {
+        if (!_sleepAtTrackEnd.value) return false
+        _sleepAtTrackEnd.value = false
+        _sleepRemainingMs.value = null
+        runCatching { controller?.pause() }
+        return true
     }
 
     fun next() {
