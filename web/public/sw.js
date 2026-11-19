@@ -10,8 +10,16 @@
  *   the cache is only an offline safety net.
  * - Old caches are purged on activate.
  */
-const CACHE = 'muzii-v2';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+// Bumped whenever the shell changes, so activate() purges the old copy.
+const CACHE = 'muzii-v3';
+const SHELL = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

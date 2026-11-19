@@ -143,6 +143,31 @@ export function useJam(code: string | null) {
   const seek = useCallback((positionMs: number) => act('seek', { positionMs }), [act]);
   const remove = useCallback((at: number) => act('remove', { index: at }), [act]);
   const setLocked = useCallback((locked: boolean) => act('lock', { locked }), [act]);
+
+  /**
+   * Host: push the room's authoritative state in one round-trip.
+   *
+   * Separate from `act()` because it fires on every queue change and a
+   * rejected sync shouldn't clobber the room state the UI is rendering.
+   */
+  const sync = useCallback(
+    async (queue: Track[], index: number, positionMs: number, playing: boolean) => {
+      if (!code || !token) return;
+      try {
+        const next = await jamAction<JamState>(code, 'sync', {
+          token,
+          queue,
+          index,
+          positionMs,
+          playing,
+        });
+        setState(next);
+      } catch {
+        // A locked/expired room just means we retry on the next heartbeat.
+      }
+    },
+    [code, token],
+  );
   const send = useCallback((text: string) => act('message', { text }), [act]);
 
   return {
@@ -159,6 +184,7 @@ export function useJam(code: string | null) {
     seek,
     remove,
     setLocked,
+    sync,
     send,
     refresh: () => (code ? refresh(code) : Promise.resolve()),
     hasToken: Boolean(token),

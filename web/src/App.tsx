@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { PlayerProvider } from './player/PlayerContext';
 import { Sidebar, type Page } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
+import { InstallButton } from './components/InstallButton';
 import { PlayerBar } from './components/PlayerBar';
 import { NowPlaying } from './components/NowPlaying';
 import { QueuePanel } from './components/QueuePanel';
@@ -139,6 +140,7 @@ function Shell() {
     <div className="app">
       <Sidebar page={page} onNavigate={navigate} />
       <main className="main">
+        <InstallButton />
         {view.type === 'jam' ? (
           <JamPage
             code={view.code}
@@ -151,7 +153,21 @@ function Shell() {
         ) : view.type === 'playlist' ? (
           <PlaylistPage playlistId={view.id} onBack={() => navigate('library')} />
         ) : view.page === 'home' ? (
-          <HomePage onOpenPlaylist={openPlaylist} onOpenJam={() => openJam(null)} />
+          <HomePage
+            onOpenPlaylist={openPlaylist}
+            onOpenJam={(carryQueue) =>
+              openJam(
+                null,
+                carryQueue && player.current
+                  ? {
+                      queue: player.queue,
+                      index: player.index,
+                      positionMs: Math.round(player.progress * 1000),
+                    }
+                  : null,
+              )
+            }
+          />
         ) : view.page === 'search' ? (
           <SearchPage />
         ) : view.page === 'jam' ? (

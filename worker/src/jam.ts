@@ -275,7 +275,7 @@ export class JamRoom {
 
     // "Read" actions only need a valid token; anything that changes the queue
     // also respects the host's lock.
-    const mutating = ['queue', 'skip', 'remove', 'play', 'pause', 'seek'].includes(route);
+    const mutating = ['queue', 'skip', 'remove', 'play', 'pause', 'seek', 'sync'].includes(route);
     if (route === 'join') {
       const guestToken = newId();
       const name = (body.name ?? 'Guest').toString().slice(0, 24);
@@ -316,6 +316,42 @@ export class JamRoom {
       case 'pause': {
         state.positionMs += Date.now() - state.updatedAt;
         state.active = false;
+        state.updatedAt = Date.now();
+        break;
+      }
+      /*
+       * Host pushes the room's authoritative state: the queue, where in it the
+       * host is, the playhead, and whether it is playing.
+       *
+       * This is the action that makes "what the host hears" visible to
+       * everyone. Before it, the room had no way to learn the host's queue at
+       * all, so a host playing music still showed "Queue 0".
+       *
+       * Host-only, and deliberately authoritative: the host's player is the
+       * source of truth, not a merge with what guests have added.
+       */
+      case 'sync': {
+        if (!isHost) return json({ error: 'host-only' }, 403);
+        const incoming = Array.isArray(body.queue) ? (body.queue as JamTrack[]) : [];
+        const clean = incoming.filter((t) => t?.id).slice(0, MAX_QUEUE);
+        // De-duplicate by id, keeping the host's order.
+        const seenSync = new Set<string>();
+        const unique = clean.filter((t) => {
+          if (seenSync.has(t.id)) return false;
+          seenSync.add(t.id);
+          return true;
+        });
+        if (unique.length) state.queue = unique;
+        if (typeof body.index === 'number' && Number.isFinite(body.index)) {
+          state.index = Math.max(
+            0,
+            Math.min(Math.round(body.index), Math.max(state.queue.length - 1, 0)),
+          );
+        }
+        state.positionMs = Math.max(0, Math.round(Number(body.positionMs) || 0));
+        // Reflect the host's transport so guests can show the right button and
+        // stop trying to "follow" a paused room.
+        if (typeof body.playing === 'boolean') state.active = body.playing;
         state.updatedAt = Date.now();
         break;
       }

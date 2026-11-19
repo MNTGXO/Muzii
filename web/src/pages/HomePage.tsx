@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Flame, Play, Radio, Sparkles, Users } from 'lucide-react';
+import { Flame, Play, Radio, RotateCcw, Sparkles, Users } from 'lucide-react';
 import { getCatalogForLanguages, getPlaylists } from '../api/client';
 import { useTaste } from '../taste/TasteContext';
 import { recentlyPlayed, topPlayed, type PlayEntry } from '../taste/store';
@@ -41,7 +41,13 @@ export function HomePage({
   onOpenJam,
 }: {
   onOpenPlaylist: (id: string) => void;
-  onOpenJam: () => void;
+  /**
+   * `carryQueue` tells App to seed the room with what is playing now. The
+   * home card used to call openJam(null) with no queue, which created an
+   * empty room even while music was playing - guests then had nothing to
+   * follow, and the host saw "Queue 0".
+   */
+  onOpenJam: (carryQueue: boolean) => void;
 }) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -53,6 +59,10 @@ export function HomePage({
   // to fetch its own *unfiltered* catalog, which is why selecting Malayalam
   // still produced a mixed feed on the home screen.
   const langKey = taste.lang.join(',');
+  const [offline, setOffline] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = () => setReloadToken((n) => n + 1);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -61,6 +71,10 @@ export function HomePage({
         if (cancelled) return;
         setTracks(c);
         setPlaylists(p);
+        // The client silently falls back to bundled demo tracks when the
+        // Worker is unreachable, so an empty-but-"" response and a network
+        // outage look identical here. Both mean "show the retry affordance".
+        setOffline(c.length === 0);
         setLoading(false);
       },
     );
@@ -68,7 +82,7 @@ export function HomePage({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [langKey]);
+  }, [langKey, reloadToken]);
 
   const featured = playlists[0];
   const featuredTracks = featured?.tracks?.length
@@ -135,17 +149,25 @@ export function HomePage({
         </section>
       )}
 
-      <section className="jam-promo" onClick={onOpenJam} role="button" tabIndex={0}
+      <section
+        className="jam-promo"
+        onClick={() => onOpenJam(Boolean(current))}
+        role="button"
+        tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') onOpenJam();
+          if (e.key === 'Enter' || e.key === ' ') onOpenJam(Boolean(current));
         }}
       >
         <div className="jam-promo-icon">
           <Users size={20} />
         </div>
         <div className="jam-promo-text">
-          <strong>Start a Jam</strong>
-          <span>Listen together — everyone adds songs, every device stays in sync.</span>
+          <strong>{current ? 'Jam what is playing' : 'Start a Jam'}</strong>
+          <span>
+            {current
+              ? `Share this queue — starting from "${current.title}".`
+              : 'Listen together — everyone adds songs, every device stays in sync.'}
+          </span>
         </div>
         <span className="jam-promo-cta">
           <Radio size={14} /> Open
@@ -255,19 +277,36 @@ export function HomePage({
             ))}
           </div>
         </section>
+      ) : suggestion.length > 0 ? (
+        <section>
+          <h2 className="section-title">Start here</h2>
+          <p className="section-hint">
+            Play a few songs and this becomes your own — top songs, artists and an
+            On repeat station follow what you actually listen to.
+          </p>
+          <div className="track-list">
+            {suggestion.map((t, i) => (
+              <TrackRow key={t.id} track={t} context={suggestion} index={i} />
+            ))}
+          </div>
+        </section>
       ) : (
-        suggestion.length > 0 && (
-          <section>
-            <h2 className="section-title">Start here</h2>
+        /*
+         * A heading with nothing under it reads as a broken page - which is
+         * exactly what it looked like when the catalog request failed and the
+         * feed came back empty. Say what happened and offer a retry instead.
+         */
+        !loading && (
+          <section className="empty-state">
+            <h2 className="section-title">Nothing to play yet</h2>
             <p className="section-hint">
-              Play a few songs and this becomes your own — top songs, artists and an
-              On repeat station follow what you actually listen to.
+              {offline
+                ? "We couldn't reach the music service, so there is nothing to show right now."
+                : 'Pick a language or try a search — new songs will show up here.'}
             </p>
-            <div className="track-list">
-              {suggestion.map((t, i) => (
-                <TrackRow key={t.id} track={t} context={suggestion} index={i} />
-              ))}
-            </div>
+            <button className="btn-primary" onClick={() => void reload()}>
+              <RotateCcw size={16} /> Try again
+            </button>
           </section>
         )
       )}
