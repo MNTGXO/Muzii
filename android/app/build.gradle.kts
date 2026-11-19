@@ -8,25 +8,66 @@ android {
     namespace = "com.muzii.app"
     compileSdk = 34
 
+    /**
+     * A committed, stable release keystore.
+     *
+     * Why this matters more than it looks: AGP's default debug signing writes
+     * `~/.android/debug.keystore` on first use, and a fresh keystore is
+     * generated on any machine that lacks it. GitHub Actions starts from a new
+     * runner every run and `gradle/actions/setup-gradle` caches `~/.gradle`,
+     * NOT `~/.android` — so every release was signed with a *different* key.
+     *
+     * Android refuses to install an APK whose signature differs from the
+     * installed one ("App not installed" / INSTALL_FAILED_UPDATE_INCOMPATIBLE),
+     * so users could not update in place: they had to uninstall first, and
+     * anyone who didn't was left running an old, broken build forever.
+     *
+     * This keystore is deliberately reproducible and non-secret in intent —
+     * it ships in the repo so that local and CI builds sign identically and
+     * updates apply cleanly. For a Play Store listing, replace it with a
+     * private keystore supplied via env vars.
+     */
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("keystore/muzii-release.p12")
+            // takeIf{isNotBlank} matters: an unset GitHub secret arrives as an
+            // EMPTY string, not as absent, so `?: default` alone would hand
+            // the signer a blank password and fail.
+            storePassword = System.getenv("MUZII_STORE_PASSWORD")?.takeIf { it.isNotBlank() }
+                ?: "muzii-release"
+            keyAlias = "muzii"
+            keyPassword = System.getenv("MUZII_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+                ?: "muzii-release"
+            storeType = "PKCS12"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.muzii.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI passes the run number so each release outranks the last one.
+        // Hardcoded 1/1.0.0 meant Android considered every release identical,
+        // which is the other half of why updates misbehaved. The fallback of 1
+        // keeps a plain local `gradle assembleRelease` working.
+        versionCode = System.getenv("MUZII_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("MUZII_VERSION_NAME") ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // API base URL. Resolution order:
         //   1. -Pmuzii.apiBaseUrl=https://your-worker.workers.dev/  (explicit)
-        //   2. MUZII_API_BASE_URL env var (set by CI from the deploy workflow)
-        //   3. https://muzii.pages.dev/ — the public Pages site, which
-        //      proxies /api/* to the Worker via _redirects.
-        // The old placeholder ("muzii.your-worker.workers.dev") never
-        // resolved, so the APK always fell back to the demo catalog.
+        //   2. MUZII_API_BASE_URL env var (set by CI; defaults to the Worker)
+        //   3. the deployed Worker itself.
+        //
+        // This points at the Worker DIRECTLY rather than at the Pages site.
+        // Going through Pages added a dependency on a generated `_redirects`
+        // proxy that is not committed, so a build could silently ship an APK
+        // whose every /api/* call 404'd — the app then showed its bundled demo
+        // tracks forever. The Worker has CORS open and needs no proxy.
         val apiBaseUrl = (
             project.findProperty("muzii.apiBaseUrl") as String?
                 ?: System.getenv("MUZII_API_BASE_URL")
-                ?: "https://muzii.pages.dev/"
+                ?: "https://muzii.mn-bots.workers.dev/"
             ).let { if (it.endsWith("/")) it else "$it/" }
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
@@ -34,9 +75,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            // CI builds are signed with the debug key so the APK is installable
-            // out of the box. For Play Store, add your own keystore signingConfig.
-            signingConfig = signingConfigs.getByName("debug")
+            // One stable key for every release, so an APK installs OVER the
+            // previous one instead of failing the signature check.
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

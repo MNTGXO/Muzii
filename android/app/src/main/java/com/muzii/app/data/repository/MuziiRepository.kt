@@ -26,15 +26,58 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
         private set
 
     /**
+     * Why the last catalog load failed, in the user's words.
+     *
+     * The banner used to say only "check your connection", which is
+     * unactionable when the real cause is a wrong/unreachable API host — and
+     * impossible for anyone to diagnose from a screenshot. Naming the host and
+     * the failure type turns a mystery into a one-line bug report.
+     */
+    @Volatile
+    var lastError: String? = null
+        private set
+
+    /**
      * One retry before giving up. A single dropped packet on a phone should
      * not silently swap the whole catalog for the 16 demo tracks — that was
      * the most visible "app looks broken" symptom.
+     *
+     * But a retry is only useful for a *fast* failure. Retrying a timeout
+     * doubles the wait, and the request was already at OkHttp's 30 s read
+     * limit — so a cold, slow backend kept the home screen empty for roughly
+     * a minute before the banner appeared. That reads as a hung app, not a
+     * retry. Connections that never establish are bounded separately below,
+     * so this only ever waits on a request that has a realistic chance.
      */
     private suspend fun <T> withRetry(block: suspend () -> T): Result<T> {
         val first = runCatching { block() }
         if (first.isSuccess) return first
-        delay(700)
+        // Do not retry something that ran out of time or was cancelled: the
+        // second attempt will burn the same budget for nothing.
+        val cause = first.exceptionOrNull()
+        if (cause is java.net.SocketTimeoutException ||
+            cause is kotlinx.coroutines.CancellationException
+        ) {
+            return first
+        }
+        delay(400)
         return runCatching { block() }
+    }
+
+    /** Turn an exception into something a person can act on. */
+    private fun describe(err: Throwable?): String {
+        val host = BuildConfig.API_BASE_URL.trimEnd('/')
+            .removePrefix("https://").removePrefix("http://")
+        return when (err) {
+            null -> "Unknown error"
+            is java.net.UnknownHostException -> "Can't find $host"
+            is java.net.SocketTimeoutException -> "$host is not responding"
+            is javax.net.ssl.SSLException -> "Secure connection to $host failed"
+            is java.net.ConnectException -> "Can't connect to $host"
+            is retrofit2.HttpException -> "$host returned HTTP ${err.code()}"
+            is com.google.gson.JsonSyntaxException -> "$host sent an unexpected reply"
+            else -> err::class.java.simpleName
+        }
     }
 
     /**
@@ -48,6 +91,7 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
             api.getCatalog(languages).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
         }
         usingDemoCatalog = remote.isFailure
+        lastError = if (remote.isFailure) describe(remote.exceptionOrNull()) else null
         return remote.getOrElse { DemoCatalog.TRACKS }
     }
 

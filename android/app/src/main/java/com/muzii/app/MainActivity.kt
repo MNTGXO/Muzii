@@ -8,6 +8,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.muzii.app.playback.PlayerManager
 import com.muzii.app.ui.MuziiNav
+import com.muzii.app.ui.RequestNotificationPermission
 import com.muzii.app.ui.theme.MuziiTheme
 import com.muzii.app.ui.viewmodel.MuziiViewModel
 
@@ -21,6 +22,9 @@ class MainActivity : ComponentActivity() {
         PlayerManager.init(applicationContext)
         setContent {
             MuziiTheme {
+                // The media notification needs a runtime permission on
+                // Android 13+; without asking, playback had no controls.
+                RequestNotificationPermission()
                 val tracks by viewModel.tracks.collectAsState()
                 val playlists by viewModel.playlists.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()
@@ -29,6 +33,7 @@ class MainActivity : ComponentActivity() {
                 val likedIds by viewModel.likedIds.collectAsState()
                 val dislikedIds by viewModel.dislikedIds.collectAsState()
                 val offline by viewModel.offline.collectAsState()
+                val offlineReason by viewModel.offlineReason.collectAsState()
                 MuziiNav(
                     tracks = tracks,
                     playlists = playlists,
@@ -42,6 +47,7 @@ class MainActivity : ComponentActivity() {
                     onToggleLike = viewModel::toggleLike,
                     onToggleDislike = viewModel::toggleDislike,
                     offline = offline,
+                    offlineReason = offlineReason,
                     onRetry = viewModel::retry,
                 )
             }
