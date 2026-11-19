@@ -88,8 +88,11 @@ function prune(state: JamState): JamState {
   };
 }
 
-/** Public view — host token and member tokens never leave the server. */
-export function publicJam(state: JamState) {
+/**
+ * Public view — host token and member tokens never leave the server.
+ * `youAreHost` is filled in by the router when it knows which token called.
+ */
+export function publicJam(state: JamState, viewerToken?: string) {
   const now = Date.now();
   const elapsed = state.active ? now - state.updatedAt : 0;
   const currentTrack = state.queue[state.index] ?? null;
@@ -106,6 +109,8 @@ export function publicJam(state: JamState) {
     members: Object.values(state.members).map((m) => m.name),
     messages: state.messages,
     createdAt: state.createdAt,
+    /** True when the caller's token is the host token. */
+    youAreHost: viewerToken ? viewerToken === state.hostToken : false,
   };
 }
 
@@ -220,14 +225,14 @@ export class JamRoom {
         createdAt: Date.now(),
       };
       await this.save(state);
-      return json({ hostToken, code: state.code, state: publicJam(this.state!) });
+      return json({ hostToken, code: state.code, state: publicJam(this.state!, hostToken) });
     }
 
     const state = await this.load();
     if (!state) return json({ error: 'jam-not-found' }, 404);
 
     if (route === '' || request.method === 'GET') {
-      return json(publicJam(state));
+      return json(publicJam(state, url.searchParams.get('token') ?? undefined));
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, any>;
@@ -242,7 +247,7 @@ export class JamRoom {
       const name = (body.name ?? 'Guest').toString().slice(0, 24);
       state.members[guestToken] = { name, at: Date.now() };
       await this.save(state);
-      return json({ token: guestToken, state: publicJam(this.state!) });
+      return json({ token: guestToken, state: publicJam(this.state!, guestToken) });
     }
 
     const member = state.members[token];
@@ -322,6 +327,6 @@ export class JamRoom {
     }
 
     await this.save(state);
-    return json(publicJam(this.state!));
+    return json(publicJam(this.state!, token));
   }
 }

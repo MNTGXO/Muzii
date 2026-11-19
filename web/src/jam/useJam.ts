@@ -27,6 +27,8 @@ export function useJam(code: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const joinedCode = useRef<string | null>(null);
+  /** Latest token, so `refresh` can identify us as host/guest. */
+  const tokenRef = useRef<string | null>(token);
 
   // Remember which jam this token belongs to — one session, one room.
   const tokenFor = useCallback((jamCode: string) => {
@@ -46,12 +48,13 @@ export function useJam(code: string | null) {
     } catch {
       /* storage unavailable */
     }
+    tokenRef.current = value;
     setToken(value);
   }, []);
 
   const refresh = useCallback(async (jamCode: string) => {
     try {
-      const next = await getJam(jamCode);
+      const next = await getJam(jamCode, tokenRef.current);
       setState(next);
       setError(null);
     } catch {
@@ -64,7 +67,10 @@ export function useJam(code: string | null) {
     if (!code) return;
     joinedCode.current = code;
     const stored = tokenFor(code);
-    if (stored) setToken(stored);
+    if (stored) {
+      setToken(stored);
+      tokenRef.current = stored;
+    }
     void refresh(code);
   }, [code, refresh, tokenFor]);
 

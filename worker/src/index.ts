@@ -204,7 +204,9 @@ export default {
         const code = jamMatch[1].toUpperCase();
         const sub = (jamMatch[2] ?? '').replace(/^\//, '');
         const room = env.JAM_ROOMS ? env.JAM_ROOMS.get(env.JAM_ROOMS.idFromName(code)) : null;
-        const target = new Request(`https://jam/${sub}`, {
+        // Keep the query string: GET calls identify the caller with ?token=
+        // so the room can tell the host from a guest.
+        const target = new Request(`https://jam/${sub}${url.search}`, {
           method: request.method,
           headers: { 'Content-Type': 'application/json' },
           body: request.method === 'POST' ? await request.text() : undefined,

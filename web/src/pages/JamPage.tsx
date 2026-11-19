@@ -47,7 +47,9 @@ export function JamPage({
   const [message, setMessage] = useState('');
 
   const state = jam.state;
-  const isHost = Boolean(jam.token && state && state.hostName && jam.hasToken);
+  // Trust the server's answer: only the host token gets `youAreHost`. Every
+  // member has *a* token, so "has a token" is not the same as "is the host".
+  const isHost = Boolean(state?.youAreHost);
   const current = state?.currentTrack ?? null;
 
   // Guests follow the room: whenever the room's track changes, load it.

@@ -33,4 +33,6 @@ export interface JamState {
   members: string[];
   messages: { id: string; author: string; text: string; at: number }[];
   createdAt: number;
+  /** True when this client's token is the room's host token. */
+  youAreHost?: boolean;
 }

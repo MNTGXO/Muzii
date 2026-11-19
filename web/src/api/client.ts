@@ -152,8 +152,9 @@ export async function joinJam(code: string, name: string): Promise<JamSession> {
   return { token: data.token, state: data.state };
 }
 
-export async function getJam(code: string): Promise<JamState> {
-  const res = await fetchWithAdBlock(`${API_BASE}/api/jam/${code}`);
+export async function getJam(code: string, token?: string | null): Promise<JamState> {
+  const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+  const res = await fetchWithAdBlock(`${API_BASE}/api/jam/${code}${qs}`);
   if (!res.ok) throw new Error('jam-not-found');
   return (await res.json()) as JamState;
 }
