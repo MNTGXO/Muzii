@@ -3,6 +3,8 @@ package com.muzii.app.ui.screens
 import androidx.compose.material.icons.filled.Share
 import android.content.Intent
 import com.muzii.app.data.model.toJamMap
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.background
@@ -66,7 +68,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun JamScreen() {
     val api = remember { JamApiFactory.create() }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("") }
