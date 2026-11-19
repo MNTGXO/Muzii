@@ -1,5 +1,6 @@
 import type { MusicProvider } from './types';
 import type { Playlist, Track } from '../types';
+import { cleanTitle } from '../radio';
 
 /**
  * JioSaavn provider (unofficial public web API).
@@ -32,15 +33,29 @@ const API_HOSTS = [
   'https://jio.shnwaz.dev/api',
   'https://saavn.sumit.co/api',
 ];
-const TIMEOUT_MS = 9000;
+/**
+ * Per-host timeout. Kept short on purpose.
+ *
+ * The catalog fans out to 5 searches in parallel, and the web client gives up
+ * after 12s. With 9s per host and 3 mirrors a single dead mirror could burn
+ * 27s, so the client aborted *before* the Worker answered and silently fell
+ * back to the 16 bundled demo tracks (the "SoundHelix" songs). 3.5s is
+ * plenty for these APIs and leaves room for the whole fan-out.
+ */
+const TIMEOUT_MS = 3500;
+/** A whole apiGet call (all mirrors) may not exceed this. */
+const BUDGET_MS = 8000;
 
 async function apiGet(path: string): Promise<any> {
   let lastError: unknown = null;
+  const deadline = Date.now() + BUDGET_MS;
   for (const host of API_HOSTS) {
+    const remaining = deadline - Date.now();
+    if (remaining < 300) break; // out of budget: fail fast, don't stall
     try {
       const res = await fetch(`${host}${path}`, {
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
       });
       if (!res.ok) throw new Error(`${host}${path} -> ${res.status}`);
       return (await res.json()) as any;
@@ -169,26 +184,115 @@ function collectResults(data: any): any[] {
   return Array.isArray(songs) ? songs : [];
 }
 
-const PLAYLISTS = [
-  { id: 'js-trending', title: 'Trending Now', description: 'What everyone is playing today.', query: 'trending hits', gradient: 'linear-gradient(135deg,#FA2D48,#FC3C44)' },
-  { id: 'js-malayalam', title: 'Malayalam Melodies', description: 'Evergreen and modern Malayalam songs.', query: 'malayalam hit songs', gradient: 'linear-gradient(135deg,#30D158,#0A84FF)' },
-  { id: 'js-hindi', title: 'Bollywood Hits', description: 'The biggest Hindi tracks.', query: 'hindi hit songs', gradient: 'linear-gradient(135deg,#BF5AF2,#5E5CE6)' },
-  { id: 'js-chill', title: 'Chill Vibes', description: 'Mellow tunes for slow evenings.', query: 'chill acoustic', gradient: 'linear-gradient(135deg,#64D2FF,#30D158)' },
+const GRADIENTS = [
+  'linear-gradient(135deg,#FA2D48,#FC3C44)',
+  'linear-gradient(135deg,#30D158,#0A84FF)',
+  'linear-gradient(135deg,#BF5AF2,#5E5CE6)',
+  'linear-gradient(135deg,#64D2FF,#30D158)',
 ];
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  malayalam: 'Malayalam',
+  tamil: 'Tamil',
+  telugu: 'Telugu',
+  hindi: 'Hindi',
+  kannada: 'Kannada',
+  punjabi: 'Punjabi',
+  english: 'English',
+  marathi: 'Marathi',
+  bengali: 'Bengali',
+};
+
+/**
+ * Build the home-screen shelves for the listener's languages.
+ *
+ * Previously these were four fixed English/Malayalam shelves regardless of
+ * what the listener picked, so a Malayalam-only user still saw "Bollywood
+ * Hits" and "Chill Vibes". Now each chosen language gets its own shelves and
+ * nothing else is shown.
+ */
+function playlistsFor(languages: string[]): {
+  id: string;
+  title: string;
+  description: string;
+  query: string;
+  gradient: string;
+}[] {
+  if (!languages.length) {
+    return [
+      { id: 'js-trending', title: 'Trending Now', description: 'What everyone is playing today.', query: 'trending hits', gradient: GRADIENTS[0] },
+      { id: 'js-malayalam', title: 'Malayalam Melodies', description: 'Evergreen and modern Malayalam songs.', query: 'malayalam hit songs', gradient: GRADIENTS[1] },
+      { id: 'js-hindi', title: 'Bollywood Hits', description: 'The biggest Hindi tracks.', query: 'hindi hit songs', gradient: GRADIENTS[2] },
+      { id: 'js-chill', title: 'Chill Vibes', description: 'Mellow tunes for slow evenings.', query: 'chill acoustic', gradient: GRADIENTS[3] },
+    ];
+  }
+
+  const out: ReturnType<typeof playlistsFor> = [];
+  languages.slice(0, 4).forEach((lang, i) => {
+    const label = LANGUAGE_LABEL[lang] ?? lang;
+    const gradient = GRADIENTS[i % GRADIENTS.length];
+    out.push({
+      id: `js-${lang}-hits`,
+      title: `${label} Hits`,
+      description: `The biggest ${label} tracks right now.`,
+      query: `${lang} hit songs`,
+      gradient,
+    });
+    out.push({
+      id: `js-${lang}-melody`,
+      title: `${label} Melodies`,
+      description: `Mellow, evergreen ${label} songs.`,
+      query: `${lang} melody songs`,
+      gradient: GRADIENTS[(i + 2) % GRADIENTS.length],
+    });
+  });
+  return out;
+}
 
 export class JioSaavnProvider implements MusicProvider {
   readonly name = 'jiosaavn';
 
+  /**
+   * Search. Deliberately returns everything the catalog has: search is the
+   * one place that is NOT language-scoped, because an explicit lookup should
+   * always find the song.
+   *
+   * It does collapse versions of the same recording ("Innale (K.J.Yesudas)
+   * (from "Balettan")", "Innale (K.J.Yesudas)", "Innale (Chithra)..."), which
+   * otherwise filled the entire result list with one song. The keepers are
+   * the entries with a real cover image, which tend to be the canonical ones.
+   */
   async search(query: string): Promise<Track[]> {
     const data = await apiGet(`/search/songs?query=${encodeURIComponent(query)}&limit=30`);
-    return collectResults(data)
+    const tracks = collectResults(data)
       .map(toTrack)
       .filter((t): t is Track => t !== null);
+
+    const best = new Map<string, Track>();
+    for (const track of tracks) {
+      const key = cleanTitle(track.title);
+      const existing = best.get(key);
+      if (!existing) {
+        best.set(key, track);
+        continue;
+      }
+      // Prefer a version with artwork, and the longer (full) recording.
+      const score = (t: Track) => (t.artworkUrl ? 2 : 0) + (t.durationSec > 90 ? 1 : 0);
+      if (score(track) > score(existing)) best.set(key, track);
+    }
+    return [...best.values()];
   }
 
-  async getCatalog(): Promise<Track[]> {
+  async getCatalog(languages: string[] = []): Promise<Track[]> {
+    // Scope the shelves to the languages the listener picked. With no
+    // preference we still return a broad mix so nothing looks empty.
+    const queries = languages.length
+      ? languages.flatMap((lang) => [`${lang} hit songs`, `${lang} melody songs`])
+      : ['top hits 2025', 'malayalam hits', 'hindi hits', 'tamil hits', 'punjabi hits'];
     const batches = await Promise.all(
-      ['top hits 2025', 'malayalam hits', 'hindi hits', 'tamil hits', 'punjabi hits'].map((q) =>
+      // Cap the fan-out: 2 queries per language, at most 6 total, or a
+      // 9-language picker would fire 18 searches and blow the timeout.
+      [...new Set(queries)].slice(0, 6).map((q) =>
         this.search(q).catch(() => [] as Track[]),
       ),
     );
@@ -216,11 +320,12 @@ export class JioSaavnProvider implements MusicProvider {
     }
   }
 
-  async getPlaylists(): Promise<Playlist[]> {
+  async getPlaylists(languages: string[] = []): Promise<Playlist[]> {
+    const defs = playlistsFor(languages);
     const batches = await Promise.all(
-      PLAYLISTS.map((def) => this.search(def.query).catch(() => [] as Track[])),
+      defs.map((def) => this.search(def.query).catch(() => [] as Track[])),
     );
-    return PLAYLISTS.map((def, i) => {
+    return defs.map((def, i) => {
       const tracks = batches[i].slice(0, 12);
       return {
         id: def.id,

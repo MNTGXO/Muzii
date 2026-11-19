@@ -10,10 +10,14 @@ import type { Playlist, Track } from '../types';
  */
 export interface MusicProvider {
   readonly name: string;
-  getCatalog(): Promise<Track[]>;
+  /**
+   * Home feed. `languages` are the ones the listener picked at onboarding
+   * (lowercase, e.g. ['malayalam']); an empty list means "no preference".
+   */
+  getCatalog(languages?: string[]): Promise<Track[]>;
   search(query: string): Promise<Track[]>;
   getTrack(id: string): Promise<Track | null>;
-  getPlaylists(): Promise<Playlist[]>;
+  getPlaylists(languages?: string[]): Promise<Playlist[]>;
   getLyrics(trackId: string): Promise<string[]>;
   /**
    * Resolve a playable audio URL for a track id. Providers with expiring

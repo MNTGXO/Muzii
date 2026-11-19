@@ -113,14 +113,19 @@ export default {
         });
       }
 
+      // The languages picked at onboarding scope the home surfaces. Search
+      // is deliberately NOT scoped: if you look something up you get it.
+      const languages = (url.searchParams.get('languages') ?? '')
+        .split(',')
+        .map((v) => v.trim().toLowerCase())
+        .filter(Boolean);
+
       if (url.pathname === '/api/catalog') {
-        const { value } = await withFallback(chain, (p) => p.getCatalog(), itemListIsEmpty);
-        // The listener's chosen languages scope the home feed. Search is
-        // deliberately NOT scoped: if you look something up you get it.
-        const languages = (url.searchParams.get('languages') ?? '')
-          .split(',')
-          .map((v) => v.trim().toLowerCase())
-          .filter(Boolean);
+        const { value } = await withFallback(
+          chain,
+          (p) => p.getCatalog(languages),
+          itemListIsEmpty,
+        );
         if (!languages.length) return json(value);
         const scoped = value.filter(
           (track) =>
@@ -132,7 +137,11 @@ export default {
       }
 
       if (url.pathname === '/api/playlists') {
-        const { value } = await withFallback(chain, (p) => p.getPlaylists(), playlistListIsEmpty);
+        const { value } = await withFallback(
+          chain,
+          (p) => p.getPlaylists(languages),
+          playlistListIsEmpty,
+        );
         return json(value);
       }
 

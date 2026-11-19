@@ -20,7 +20,9 @@ interface MuziiApi {
     @GET("api/catalog")
     suspend fun getCatalog(@Query("languages") languages: String = ""): List<Track>
 
-    @GET("api/playlists") suspend fun getPlaylists(): List<Playlist>
+    /** Home shelves, scoped to the onboarding languages. */
+    @GET("api/playlists")
+    suspend fun getPlaylists(@Query("languages") languages: String = ""): List<Playlist>
 
     @GET("api/search") suspend fun search(@Query("q") q: String): List<Track>
 

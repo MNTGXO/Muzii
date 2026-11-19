@@ -14,18 +14,28 @@ import type { Track } from '../api/types';
  */
 
 /** Strip suffixes, punctuation and casing so near-duplicates compare equal. */
+export function cleanTitle(title: string): string {
+  return title
+    .toLowerCase()
+    // "(K.J.Yesudas) (from "Balettan")", "[Remastered 2011]", "- Reprise"
+    .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
+    .replace(/\s-\s.*$/, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Identity of a *song*, used for the no-repeat rule.
+ *
+ * Keys on the title alone. The same recording shows up many times in these
+ * catalogs — "Innale (K.J.Yesudas) (from "Balettan")", "Innale (Chithra)
+ * (from "Balettan")" — one song with different singer credits and the album
+ * baked into the title. Including the artist let every one of them into the
+ * same queue. (Mirrored in worker/src/radio.ts.)
+ */
 export function trackKey(track: Track): string {
-  const clean = (value: string) =>
-    value
-      .toLowerCase()
-      // "(From "Kumbalangi Nights")", "[Remastered 2011]", "- Reprise"
-      .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
-      .replace(/\s-\s.*$/, ' ')
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  const artist = (track.artist.split(/,|&|feat\.?|ft\.?/i)[0] ?? track.artist).trim();
-  return `${clean(track.title)}|${clean(artist)}`;
+  return cleanTitle(track.title);
 }
 
 export interface TrackHistory {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Play, Radio, Sparkles, Users } from 'lucide-react';
-import { getCatalog, getPlaylists } from '../api/client';
+import { getCatalogForLanguages, getPlaylists } from '../api/client';
+import { useTaste } from '../taste/TasteContext';
 import type { Playlist, Track } from '../api/types';
 import { usePlayer } from '../player/PlayerContext';
 import { TrackRow } from '../components/TrackRow';
@@ -25,19 +26,28 @@ export function HomePage({
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const { playQueue, current } = usePlayer();
+  const { taste } = useTaste();
 
+  // The feed is scoped to the languages picked at onboarding. This page used
+  // to fetch its own *unfiltered* catalog, which is why selecting Malayalam
+  // still produced a mixed feed on the home screen.
+  const langKey = taste.lang.join(',');
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([getCatalog(), getPlaylists()]).then(([c, p]) => {
-      if (cancelled) return;
-      setTracks(c);
-      setPlaylists(p);
-      setLoading(false);
-    });
+    setLoading(true);
+    void Promise.all([getCatalogForLanguages(taste.lang), getPlaylists(taste.lang)]).then(
+      ([c, p]) => {
+        if (cancelled) return;
+        setTracks(c);
+        setPlaylists(p);
+        setLoading(false);
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [langKey]);
 
   const featured = playlists[0];
   const featuredTracks = featured?.tracks?.length

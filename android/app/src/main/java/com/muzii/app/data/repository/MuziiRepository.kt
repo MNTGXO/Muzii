@@ -17,6 +17,15 @@ import kotlinx.coroutines.delay
 class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
 
     /**
+     * True when the last catalog load fell back to the bundled demo tracks.
+     * The UI shows a banner in that case: silently serving 16 SoundHelix
+     * tracks looked like the app was broken with no explanation.
+     */
+    @Volatile
+    var usingDemoCatalog: Boolean = false
+        private set
+
+    /**
      * One retry before giving up. A single dropped packet on a phone should
      * not silently swap the whole catalog for the 16 demo tracks — that was
      * the most visible "app looks broken" symptom.
@@ -34,12 +43,18 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
      */
     suspend fun getCatalog(
         languages: String = TasteStore.languagesParam(),
-    ): List<Track> = withRetry {
-        api.getCatalog(languages).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
-    }.getOrElse { DemoCatalog.TRACKS }
+    ): List<Track> {
+        val remote = withRetry {
+            api.getCatalog(languages).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
+        }
+        usingDemoCatalog = remote.isFailure
+        return remote.getOrElse { DemoCatalog.TRACKS }
+    }
 
-    suspend fun getPlaylists(): List<Playlist> {
-        val remote = withRetry { api.getPlaylists() }
+    suspend fun getPlaylists(
+        languages: String = TasteStore.languagesParam(),
+    ): List<Playlist> {
+        val remote = withRetry { api.getPlaylists(languages) }
         if (remote.isFailure) return DemoCatalog.PLAYLISTS
         // Playlist tracks must stream through the Worker too (the demo
         // fallback above already points at real URLs, so it is left alone).
