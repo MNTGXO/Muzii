@@ -114,11 +114,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       else if (rp === 'all') setIndex(0);
     };
 
+    // If the Worker-proxied stream fails (e.g. proxy unreachable or blocked),
+    // retry once with the track's direct URL so playback still works.
+    const onError = () => {
+      const a = audioRef.current;
+      const { queue: q, index: i } = stateRef.current;
+      const track = q[i];
+      if (!a || !track) return;
+      const direct = track.streamUrl;
+      const isHttp = /^https?:\/\//.test(direct);
+      if (isHttp && a.src !== direct) {
+        a.src = direct;
+        void a.play().catch(() => setIsPlaying(false));
+      }
+    };
+
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
 
     return () => {
       audio.pause();
@@ -127,6 +143,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('loadedmetadata', onMeta);
       audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('error', onError);
       audioRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
