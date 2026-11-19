@@ -243,7 +243,9 @@ fun MuziiNav(
                         // open actually updates the card: reading the store
                         // directly is invisible to Compose.
                         likedTracks = remember(likedIds) { TasteStore.likedTracks() },
-                        recentTracks = PlayLog.recentlyPlayedTracks(50),
+                        recentTracks = remember(currentIndex, isPlaying) {
+                            PlayLog.recentlyPlayedTracks(50)
+                        },
                         onPlayLiked = {
                             val liked = TasteStore.likedTracks()
                             if (liked.isNotEmpty()) PlayerManager.playQueue(liked, 0)

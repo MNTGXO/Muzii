@@ -14,6 +14,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.muzii.app.data.model.Track
 import com.muzii.app.data.taste.PlayLog
+import com.muzii.app.data.taste.QueueStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -146,6 +147,13 @@ object PlayerManager {
                 if (tracks != null) {
                     runCatching { startPlayback(connected, tracks, pendingIndex) }
                     pendingQueue = null
+                } else {
+                    // Nothing was queued in this process: restore the last
+                    // session, paused, at the position it stopped. Loading it
+                    // paused (not playing) is deliberate — music starting by
+                    // itself when you open the app is hostile, and on Android
+                    // it can be blocked anyway without a user gesture.
+                    restoreSession(connected)
                 }
             },
             ContextCompat.getMainExecutor(context),
@@ -164,6 +172,11 @@ object PlayerManager {
     private val Listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _isPlaying.value = isPlaying
+            // Read the live position before saving: persistQueue() uses the
+            // cached _positionMs, which the 500ms UI ticker keeps fresh while
+            // playing but which lags by up to half a second at pause time.
+            runCatching { _positionMs.value = controller?.currentPosition ?: _positionMs.value }
+            persistQueue()
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -202,6 +215,8 @@ object PlayerManager {
                 sleepTimerHitTrackEnd()
             }
             _currentIndex.value = controller?.currentMediaItemIndex ?: 0
+            _positionMs.value = 0L
+            persistQueue()
             _error.value = null
             // Top up before we actually hit the end, so playback is seamless.
             val c = controller ?: return
@@ -272,12 +287,45 @@ object PlayerManager {
         // The session can die while the app is backgrounded; a dead controller
         // must not crash the UI thread.
         runCatching { startPlayback(c, unique, start) }
+        persistQueue()
     }
 
     /** Start a song radio: the seed plays, then the app fills the rest. */
     fun startRadio(seed: Track) {
         playQueue(listOf(seed), 0, radio = true)
         maybeExtend()
+    }
+
+    /**
+     * Reopen the last queue, paused, where it stopped.
+     *
+     * Uses `setMediaItems(..., startIndex, positionMs)` so the seek happens as
+     * part of preparation — calling seekTo() before prepare() is ignored by
+     * ExoPlayer and silently resumed from 0.
+     */
+    private fun restoreSession(c: MediaController) {
+        val snap = QueueStore.load() ?: return
+        if (_queue.value.isNotEmpty()) return
+        runCatching {
+            _queue.value = snap.tracks
+            _currentIndex.value = snap.index
+            _isRadio.value = snap.radio
+            c.setMediaItems(snap.tracks.map { toMediaItem(it) }, snap.index, snap.positionMs)
+            applyModes(c)
+            _positionMs.value = snap.positionMs
+            c.prepare()
+            // Explicitly NOT calling play(): restored sessions are paused.
+        }
+    }
+
+    /** Snapshot the current session so it survives process death. */
+    private fun persistQueue() {
+        val tracks = _queue.value
+        if (tracks.isEmpty()) {
+            QueueStore.clear()
+            return
+        }
+        QueueStore.save(tracks, _currentIndex.value, _positionMs.value, _isRadio.value)
     }
 
     private fun startPlayback(c: MediaController, tracks: List<Track>, startIndex: Int) {
