@@ -41,9 +41,16 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ vars.WORKER_URL }}
       # `pages deploy` fails with "Project not found" on first run if the
-      # Pages project doesn't exist yet — create it (no-op error if it does).
+      # Pages project doesn't exist yet — create it only when missing.
+      # No error masking: if auth is broken, this step fails loudly.
       - name: Ensure Pages project exists
-        run: npx wrangler pages project create muzii || true
+        run: |
+          if npx wrangler pages project list --json | grep -Eq '"name"[[:space:]]*:[[:space:]]*"muzii"'; then
+            echo "Pages project 'muzii' already exists."
+          else
+            echo "Creating Pages project 'muzii'..."
+            npx wrangler pages project create muzii
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
