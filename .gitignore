@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.apk
+*.aab
+local.properties
+.env
+.env.local
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+.DS_Store
