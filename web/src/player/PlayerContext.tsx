@@ -75,6 +75,25 @@ interface PlayerContextValue {
   setOnPlayed: (fn: ((track: Track) => void) | null) => void;
   /** Disliked ids — filtered out of every queue before it is shown. */
   disliked: string[];
+  /**
+   * Sleep timer. `null` when off. `kind: 'duration'` counts down from
+   * `totalMs`; `kind: 'track'` fires when the current song ends.
+   */
+  sleepTimer: SleepTimerState | null;
+  /** Milliseconds left, or null when the timer is off / track-based. */
+  sleepRemainingMs: number | null;
+  /** Arm the timer: a duration in minutes, or 'track' for end-of-song. */
+  setSleepTimer: (option: SleepTimerOption | null) => void;
+}
+
+export type SleepTimerOption = { kind: 'duration'; minutes: number } | { kind: 'track' };
+
+export interface SleepTimerState {
+  kind: 'duration' | 'track';
+  /** Wall-clock ms when a duration timer will fire. */
+  endsAt: number | null;
+  /** Total length of a duration timer, for the countdown ring. */
+  totalMs: number | null;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -162,6 +181,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
   const [extending, setExtending] = useState(false);
+  const [sleepTimer, setSleepTimerState] = useState<SleepTimerState | null>(null);
+  const [sleepRemainingMs, setSleepRemainingMs] = useState<number | null>(null);
+  /**
+   * The listener's own setting, kept separately from the running countdown.
+   * The timer fires only once; if they press play again afterwards the music
+   * must simply resume, with no timer re-arming behind their back.
+   */
+  const sleepVolumeRef = useRef<number | null>(null);
+  /**
+   * The end-of-track handler lives in an effect that is registered once, so
+   * it can't close over the current timer state. Mirror it into a ref.
+   */
+  const fireTrackSleepTimerRef = useRef<() => boolean>(() => false);
 
   const historyRef = useRef<TrackHistory>(loadHistory());
   /**
@@ -194,6 +226,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   /** Mirrors `progress` for the persist effect without re-subscribing. */
   const progressRef = useRef(0);
   progressRef.current = progress;
+  /** Mirrors `volume` so the sleep-timer interval can restore it. */
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
   const setCatalog = useCallback((tracks: Track[]) => {
     catalogRef.current = tracks;
@@ -370,6 +405,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // advancing, while `stateRef` still points at the track that just ended.
       const finished = q[i];
       if (finished) noteListened(finished, Number.isFinite(audio.duration) ? audio.duration : 0);
+
+      // "End of track" sleep timer: stop here, on the boundary between
+      // songs, rather than in the middle of one. Returning early means the
+      // queue does NOT advance, so resuming continues with the next song.
+      if (fireTrackSleepTimerRef.current()) return;
       if (rp === 'one') {
         audio.currentTime = 0;
         void audio.play().catch(() => undefined);
@@ -773,6 +813,102 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (audioRef.current) audioRef.current.volume = v;
   }, []);
 
+  /**
+   * Sleep timer.
+   *
+   * The timer **pauses** playback; it never calls stop() or tears the audio
+   * element down. That is deliberate and is the whole point of the feature:
+   * a paused session keeps the OS media notification alive, so the listener
+   * can tap play from the notification bar and carry on from the exact spot
+   * they fell asleep at. A stop() would clear the notification and leave
+   * nothing to resume from.
+   *
+   * A duration timer fades the volume out over the last ~10 seconds instead
+   * of cutting mid-line, then restores the volume so the next play is
+   * audible.
+   */
+  const cancelSleepTimer = useCallback(() => {
+    // If a fade was in progress, put the volume back before clearing the state.
+    if (audioRef.current && sleepVolumeRef.current !== null) {
+      audioRef.current.volume = volumeRef.current;
+    }
+    setSleepTimerState(null);
+    setSleepRemainingMs(null);
+    sleepVolumeRef.current = null;
+  }, []);
+
+  const setSleepTimer = useCallback(
+    (option: SleepTimerOption | null) => {
+      if (!option) {
+        cancelSleepTimer();
+        return;
+      }
+      if (option.kind === 'track') {
+        // Fires in the ended handler; no clock to run.
+        setSleepTimerState({ kind: 'track', endsAt: null, totalMs: null });
+        setSleepRemainingMs(null);
+        return;
+      }
+      const totalMs = Math.max(1, option.minutes) * 60_000;
+      setSleepTimerState({ kind: 'duration', endsAt: Date.now() + totalMs, totalMs });
+      setSleepRemainingMs(totalMs);
+    },
+    [cancelSleepTimer],
+  );
+
+  // Drive a duration timer. One interval, cleaned up with the timer, so a
+  // closed tab can't leave a stray loop running.
+  useEffect(() => {
+    if (!sleepTimer || sleepTimer.kind !== 'duration' || !sleepTimer.endsAt) return;
+    const endsAt = sleepTimer.endsAt;
+
+    const tick = () => {
+      const left = endsAt - Date.now();
+      setSleepRemainingMs(Math.max(0, left));
+
+      // Fade over the last 10s, but only while something is actually playing.
+      const audio = audioRef.current;
+      if (audio && left <= 10_000 && left > 0 && !audio.paused) {
+        if (sleepVolumeRef.current === null) sleepVolumeRef.current = volumeRef.current;
+        audio.volume = Math.max(0, (left / 10_000) * volumeRef.current);
+      }
+
+      if (left <= 0) {
+        if (audio) {
+          audio.pause();
+          // Restore the volume straight away, or the next play is silent.
+          audio.volume = sleepVolumeRef.current ?? volumeRef.current;
+        }
+        setIsPlaying(false);
+        setSleepTimerState(null);
+        setSleepRemainingMs(null);
+        sleepVolumeRef.current = null;
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+    // volumeRef is a ref, so it never needs to be a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sleepTimer]);
+
+  /** Called when a track ends: the 'track' timer's moment. */
+  const fireTrackSleepTimer = useCallback(() => {
+    if (!sleepTimer || sleepTimer.kind !== 'track') return false;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.volume = volumeRef.current;
+    }
+    // Only claim "paused" if something was playing; otherwise ending a track
+    // that had already stopped would flip the UI into a wrong state.
+    setIsPlaying(audio ? !audio.paused : false);
+    setSleepTimerState(null);
+    return true;
+  }, [sleepTimer]);
+  fireTrackSleepTimerRef.current = fireTrackSleepTimer;
+
   const toggleShuffle = useCallback(() => setShuffle((s) => !s), []);
   const cycleRepeat = useCallback(
     () => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')),
@@ -813,6 +949,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCatalog,
       setTaste,
       setOnPlayed,
+      sleepTimer,
+      sleepRemainingMs,
+      setSleepTimer,
       disliked,
     }),
     [
@@ -848,6 +987,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCatalog,
       setTaste,
       setOnPlayed,
+      sleepTimer,
+      sleepRemainingMs,
+      setSleepTimer,
       disliked,
     ],
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Check,
@@ -19,7 +19,7 @@ import { useJam, savedJamName } from '../jam/useJam';
 import { usePlayer } from '../player/PlayerContext';
 import { Artwork } from '../components/Artwork';
 import { formatTime } from '../utils/format';
-import type { Track } from '../api/types';
+import type { JamSeed, Track } from '../api/types';
 
 /**
  * Muzii Jam — the Spotify-Jam equivalent.
@@ -33,11 +33,17 @@ export function JamPage({
   onBack,
   onOpenCode,
   catalog,
+  seed,
+  onSeedUsed,
 }: {
   code: string | null;
   onBack: () => void;
   onOpenCode: (code: string) => void;
   catalog: Track[];
+  /** Queue carried in from the player, for a jam started mid-listen. */
+  seed?: JamSeed | null;
+  /** Clears the seed once it has been used, so a reload doesn't re-host. */
+  onSeedUsed?: () => void;
 }) {
   const jam = useJam(code);
   const player = usePlayer();
@@ -47,6 +53,26 @@ export function JamPage({
   const [message, setMessage] = useState('');
 
   const state = jam.state;
+
+  /**
+   * Auto-host when arriving with a seed, i.e. from the player's Jam button.
+   *
+   * The point of the feature is one tap: you are listening, you tap Jam, and
+   * you are in a room that is already playing what you were playing. Without
+   * this you would land on the "create a jam" form and have to fill it in.
+   */
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!seed || seededRef.current || code) return;
+    seededRef.current = true;
+    const hostName = savedJamName().trim() || 'Host';
+    void jam.host(hostName, seed).then((created) => {
+      onSeedUsed?.();
+      if (created) onOpenCode(created);
+    });
+    // Runs once per seed; jam.host is stable enough for this one-shot call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed, code]);
   // Trust the server's answer: only the host token gets `youAreHost`. Every
   // member has *a* token, so "has a token" is not the same as "is the host".
   const isHost = Boolean(state?.youAreHost);

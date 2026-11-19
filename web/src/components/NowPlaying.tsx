@@ -4,6 +4,8 @@ import {
   ChevronDown,
   Heart,
   ListMusic,
+  Moon,
+  Users,
   Loader2,
   Pause,
   Play,
@@ -21,15 +23,30 @@ import { useTaste } from '../taste/TasteContext';
 import { Artwork } from './Artwork';
 import { formatTime } from '../utils/format';
 
+/** "1h 04m" / "04:30" — long for hours, mm:ss under an hour. */
+function formatCountdown(ms: number | null): string {
+  if (ms === null) return '0:00';
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export function NowPlaying({
   onClose,
   onOpenQueue,
+  onStartJam,
 }: {
   onClose: () => void;
   onOpenQueue?: () => void;
+  /** Take the current queue into a Jam room; see JamPage. */
+  onStartJam?: () => void;
 }) {
   const p = usePlayer();
   const { isLiked, isDisliked, toggleLike, toggleDislike } = useTaste();
+  const [timerOpen, setTimerOpen] = useState(false);
   // One-shot pulse so a tap is acknowledged on a phone you aren't looking at.
   const [pulse, setPulse] = useState<'like' | 'dislike' | null>(null);
 
@@ -66,13 +83,33 @@ export function NowPlaying({
           <ChevronDown size={28} />
         </button>
         <span className="np-eyebrow">Playing from your queue</span>
-        {onOpenQueue ? (
-          <button className="np-close" onClick={onOpenQueue} aria-label="Queue">
-            <ListMusic size={22} />
+        <div className="np-top-actions">
+          {/*
+            Sleep timer lives beside the other "session" controls rather than
+            in the transport row, which already holds five buttons.
+          */}
+          <button
+            className={`np-timer-toggle${p.sleepTimer ? ' on' : ''}`}
+            onClick={() => setTimerOpen((v) => !v)}
+            aria-label="Sleep timer"
+            aria-expanded={timerOpen}
+          >
+            <Moon size={20} />
+            {p.sleepTimer && <span className="np-timer-dot" aria-hidden />}
           </button>
-        ) : (
-          <span style={{ width: 28 }} />
-        )}
+          {onStartJam && (
+            <button className="np-close" onClick={onStartJam} aria-label="Start a jam">
+              <Users size={20} />
+            </button>
+          )}
+          {onOpenQueue ? (
+            <button className="np-close" onClick={onOpenQueue} aria-label="Queue">
+              <ListMusic size={22} />
+            </button>
+          ) : (
+            <span style={{ width: 28 }} />
+          )}
+        </div>
       </div>
 
       <div className={`np-art${p.isPlaying ? ' is-playing' : ''}`}>
@@ -181,6 +218,59 @@ export function NowPlaying({
           {p.repeat === 'one' ? <Repeat1 size={22} /> : <Repeat size={22} />}
         </button>
       </div>
+
+      {timerOpen && (
+        <div className="np-timer" role="group" aria-label="Sleep timer">
+          <p className="np-timer-title">
+            <Moon size={14} /> Sleep timer
+          </p>
+          <div className="np-timer-options">
+            {[15, 30, 45, 60].map((min) => {
+              const active =
+                p.sleepTimer?.kind === 'duration' &&
+                p.sleepTimer.totalMs === min * 60_000;
+              return (
+                <button
+                  key={min}
+                  className={active ? 'on' : ''}
+                  onClick={() => {
+                    p.setSleepTimer({ kind: 'duration', minutes: min });
+                    setTimerOpen(false);
+                  }}
+                >
+                  {min} min
+                </button>
+              );
+            })}
+            <button
+              className={p.sleepTimer?.kind === 'track' ? 'on' : ''}
+              onClick={() => {
+                // The nicest option at night: finish this song, then stop.
+                p.setSleepTimer({ kind: 'track' });
+                setTimerOpen(false);
+              }}
+            >
+              End of track
+            </button>
+            <button
+              className="np-timer-off"
+              onClick={() => {
+                p.setSleepTimer(null);
+                setTimerOpen(false);
+              }}
+            >
+              Off
+            </button>
+          </div>
+          <p className="np-timer-hint">
+            {p.sleepTimer
+              ? p.sleepTimer.kind === 'track'
+                ? 'Stops when this song ends. The notification stays, so you can resume from it.'
+                : `Pausing in ${formatCountdown(p.sleepRemainingMs)}. The notification stays, so you can resume from it.`
+              : 'Music pauses when the timer ends — it keeps the notification alive so you can resume.'}
+          </p>
+        </div>
+      )}
 
       <p className="np-badge">Ad-free • Background play on</p>
     </div>

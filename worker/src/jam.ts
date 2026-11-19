@@ -205,20 +205,54 @@ export class JamRoom {
       });
 
     if (route === 'create') {
-      const { name, code } = (await request.json().catch(() => ({}))) as {
-        name?: string;
-        code?: string;
-      };
+      const { name, code, queue: seed, index: seedIndex, positionMs: seedPosition } =
+        (await request.json().catch(() => ({}))) as {
+          name?: string;
+          code?: string;
+          /** Optional: the host's current queue, so a jam can start mid-listen. */
+          queue?: JamTrack[];
+          index?: number;
+          positionMs?: number;
+        };
       const hostToken = newId();
+
+      /*
+       * Seed the room from the host's live queue.
+       *
+       * Before this, POST /api/jam always created `queue: []`, so "start a jam
+       * from the player" dropped you into an empty room and made you rebuild
+       * the queue you were already listening to. Now the room adopts it -
+       * including the exact song and position - and guests join in progress.
+       */
+      const seededQueue: JamTrack[] = Array.isArray(seed)
+        ? seed.filter((t) => t?.id).slice(0, MAX_QUEUE)
+        : [];
+      // De-duplicate: a jam queue keyed by id would otherwise show the same
+      // song twice if the host's queue had variants of it.
+      const seen = new Set<string>();
+      const uniqueQueue = seededQueue.filter((t) => {
+        if (seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      });
+      const seededIndex =
+        typeof seedIndex === 'number' && Number.isFinite(seedIndex)
+          ? Math.max(0, Math.min(Math.round(seedIndex), Math.max(uniqueQueue.length - 1, 0)))
+          : 0;
+
       const state: JamState = {
         code: code ?? newCode(),
         hostName: (name ?? 'Host').slice(0, 24),
         hostToken,
-        active: false,
+        // A seeded room is already playing something, so it starts active.
+        active: uniqueQueue.length > 0,
         locked: false,
-        queue: [],
-        index: 0,
-        positionMs: 0,
+        queue: uniqueQueue,
+        index: seededIndex,
+        positionMs:
+          typeof seedPosition === 'number' && Number.isFinite(seedPosition)
+            ? Math.max(0, Math.round(seedPosition))
+            : 0,
         updatedAt: Date.now(),
         members: { [hostToken]: { name: (name ?? 'Host').slice(0, 24), at: Date.now() } },
         messages: [],

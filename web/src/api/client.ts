@@ -170,10 +170,20 @@ async function jamPost<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function createJam(name: string): Promise<JamSession> {
+/**
+ * Create a jam room, optionally seeded with the host's current queue.
+ *
+ * Seeding is what lets "start a jam" work from inside the player: the room
+ * adopts the songs you were already listening to, and the exact position, so
+ * guests drop into the same moment rather than an empty queue.
+ */
+export async function createJam(
+  name: string,
+  seed?: { queue?: Track[]; index?: number; positionMs?: number },
+): Promise<JamSession> {
   const data = await jamPost<{ hostToken: string; code: string; state: JamState }>(
     '/api/jam',
-    { name },
+    { name, ...(seed ?? {}) },
   );
   return { token: data.hostToken, state: data.state };
 }

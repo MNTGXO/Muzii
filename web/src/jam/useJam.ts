@@ -82,10 +82,14 @@ export function useJam(code: string | null) {
   }, [code, refresh]);
 
   const host = useCallback(
-    async (name: string) => {
+    async (
+      name: string,
+      /** Optional: seed the room from the player's live queue. */
+      seed?: { queue?: Track[]; index?: number; positionMs?: number },
+    ) => {
       setBusy(true);
       try {
-        const session = await createJam(name);
+        const session = await createJam(name, seed);
         rememberToken(session.state.code, session.token);
         setState(session.state);
         sessionStorage.setItem(NAME_KEY, name);
