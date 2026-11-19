@@ -1,5 +1,12 @@
 package com.muzii.app.ui.screens
 
+import androidx.compose.material.icons.filled.Share
+import android.content.Intent
+import com.muzii.app.data.model.toJamMap
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +68,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun JamScreen() {
     val api = remember { JamApiFactory.create() }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("") }
@@ -69,6 +77,49 @@ fun JamScreen() {
     var state by remember { mutableStateOf<JamState?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    /** True when THIS device created the room and is therefore the speaker. */
+    var hosting by remember { mutableStateOf(false) }
+
+    val queue by PlayerManager.queue.collectAsState()
+    val currentIndex by PlayerManager.currentIndex.collectAsState()
+    val positionMs by PlayerManager.positionMs.collectAsState()
+    val isPlaying by PlayerManager.isPlaying.collectAsState()
+
+    /*
+     * Host mirroring.
+     *
+     * The room does not stream audio: the host's device is the speaker and
+     * reports what it is playing, and guests follow. Without this loop a phone
+     * that hosted a jam would leave everyone else frozen on the first song.
+     * A signature guard means we only POST when something actually changed,
+     * plus a slow heartbeat so a seek or a paused host still converges.
+     */
+    LaunchedEffect(hosting, token) {
+        if (!hosting) return@LaunchedEffect
+        val jwt = token ?: return@LaunchedEffect
+        var lastSignature = ""
+        var tick = 0
+        while (true) {
+            val signature = "${queue.joinToString(",") { it.id }}|$currentIndex"
+            if (signature != lastSignature || tick % 8 == 0) {
+                runCatching {
+                    api.sync(
+                        code = code,
+                        body = mapOf(
+                            "token" to jwt,
+                            "queue" to queue.map { it.toJamMap() },
+                            "index" to currentIndex,
+                            "positionMs" to positionMs,
+                            "playing" to isPlaying,
+                        ),
+                    )
+                }.onSuccess { state = it }
+                lastSignature = signature
+            }
+            tick++
+            delay(2500)
+        }
+    }
 
     // Poll the room while we're in it.
     LaunchedEffect(token) {
@@ -79,8 +130,11 @@ fun JamScreen() {
         }
     }
 
-    // Follow the room's playback.
-    LaunchedEffect(state?.currentTrack?.id) {
+    // Follow the room's playback — but never when we ARE the room. A host that
+    // followed its own sync would drag its player back to a stale position
+    // every 4 seconds, which reads as the music randomly jumping.
+    LaunchedEffect(state?.currentTrack?.id, hosting) {
+        if (hosting) return@LaunchedEffect
         val track = state?.currentTrack ?: return@LaunchedEffect
         if (PlayerManager.current?.id != track.id) {
             val queue = state?.queue?.map { it.toTrack() } ?: return@LaunchedEffect
@@ -119,6 +173,30 @@ fun JamScreen() {
                         modifier = Modifier.size(12.dp),
                     )
                 }
+                Spacer(Modifier.weight(1f))
+                // Inviting someone required reading the code out loud. A share
+                // sheet is how a phone is supposed to do this.
+                IconButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                "Join my Muzii Jam — code ${room.code}.\n" +
+                                    "Open https://muzii.pages.dev and enter the code.",
+                            )
+                        }
+                        context.startActivity(
+                            Intent.createChooser(intent, "Invite to jam"),
+                        )
+                    },
+                ) {
+                    Icon(
+                        Icons.Filled.Share,
+                        contentDescription = "Share jam code",
+                        tint = TextSecondary,
+                    )
+                }
             }
             Text(
                 "${room.hostName}'s Jam",
@@ -130,6 +208,30 @@ fun JamScreen() {
                 color = TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
+            /*
+             * Show the code, large and selectable.
+             *
+             * The room never displayed its own code anywhere — you could be in
+             * a jam and have no way to tell a friend what to join.
+             */
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    room.code,
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SurfaceElevated)
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "share this code",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
             room.currentTrack?.let { track ->
@@ -284,9 +386,54 @@ fun JamScreen() {
             Spacer(Modifier.height(10.dp))
             Text(it, color = Color(0xFFFF9F0A), style = MaterialTheme.typography.bodySmall)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
+        /*
+         * Hosting from the phone.
+         *
+         * This screen used to say "host on the web". That was a real gap: the
+         * host is by definition the device playing the audio, so telling
+         * someone holding a phone to go find a laptop was backwards. The room
+         * is seeded with the live queue so guests join mid-song.
+         */
+        OutlinedButton(
+            onClick = {
+                busy = true
+                error = null
+                scope.launch {
+                    runCatching {
+                        api.host(
+                            mapOf(
+                                "name" to name.ifBlank { "Host" },
+                                "queue" to queue.map { it.toJamMap() },
+                                "index" to currentIndex,
+                                "positionMs" to positionMs,
+                            ),
+                        )
+                    }.onSuccess { response ->
+                        token = response.hostToken
+                        code = response.code
+                        state = response.state
+                        hosting = true
+                    }.onFailure {
+                        error = if (queue.isEmpty()) {
+                            "Play something first, then host a jam from it."
+                        } else {
+                            "Couldn't start the jam — check your connection."
+                        }
+                    }
+                    busy = false
+                }
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Filled.Groups, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (queue.isEmpty()) "Start a jam (play a song first)" else "Host this queue")
+        }
+        Spacer(Modifier.height(10.dp))
         Text(
-            "Host a jam at muzii.pages.dev, then enter the code here.",
+            "Hosting means this device is the speaker: everyone else hears what you hear, in sync.",
             color = TextSecondary,
             style = MaterialTheme.typography.bodySmall,
         )

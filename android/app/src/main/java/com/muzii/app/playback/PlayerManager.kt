@@ -564,6 +564,92 @@ object PlayerManager {
         }
     }
 
+    /**
+     * Remove one item from the queue, by position.
+     *
+     * The web's Up Next panel can edit the queue; the phone could only look at
+     * it and jump. Rules mirror the web:
+     * - removing the playing item advances to the next one rather than
+     *   stopping, because stopping playback on an edit is a jarring surprise;
+     * - removing the last remaining item clears the queue and stops.
+     */
+    fun removeAt(position: Int) {
+        val c = controller
+        val current = _queue.value
+        if (position !in current.indices) return
+        val wasPlaying = c?.isPlaying == true
+        val playingIndex = c?.currentMediaItemIndex ?: _currentIndex.value
+
+        _queue.value = current.filterIndexed { i, _ -> i != position }
+        if (_queue.value.isEmpty()) {
+            runCatching { c?.clearMediaItems() }
+            _currentIndex.value = 0
+            _positionMs.value = 0L
+            persistQueue()
+            return
+        }
+
+        if (c == null) {
+            _currentIndex.value = (playingIndex - if (position < playingIndex) 1 else 0)
+                .coerceIn(0, _queue.value.lastIndex)
+            return
+        }
+
+        runCatching {
+            c.removeMediaItem(position)
+            if (position < playingIndex) {
+                _currentIndex.value = playingIndex - 1
+            } else if (position == playingIndex) {
+                _currentIndex.value = playingIndex.coerceAtMost(_queue.value.lastIndex)
+                // ExoPlayer already moved to the following item.
+                if (wasPlaying) c.play()
+            }
+            _currentIndex.value = c.currentMediaItemIndex.coerceAtLeast(0)
+            if (c.currentMediaItemIndex >= c.mediaItemCount) {
+                c.seekTo(c.mediaItemCount - 1, 0L)
+            }
+        }
+        persistQueue()
+    }
+
+    /**
+     * Move a queued item. Used by the Up Next drag handle; `to` is the target
+     * position *after* the move.
+     */
+    fun moveItem(from: Int, to: Int) {
+        val list = _queue.value
+        if (from !in list.indices || to !in list.indices || from == to) return
+        val playingId = list.getOrNull(_currentIndex.value)?.id
+        val mutable = list.toMutableList()
+        val item = mutable.removeAt(from)
+        mutable.add(to, item)
+        _queue.value = mutable
+        // The playing track may have shifted; follow it by id so the highlight
+        // and next/previous stay correct.
+        _currentIndex.value = mutable.indexOfFirst { it.id == playingId }.coerceAtLeast(0)
+        val c = controller ?: return
+        runCatching {
+            c.moveMediaItem(from, to)
+            _currentIndex.value = c.currentMediaItemIndex.coerceAtLeast(0)
+        }
+        persistQueue()
+    }
+
+    /** Play a queued item next, ahead of everything else. Mirrors web enqueueNext. */
+    fun playNext(track: Track) {
+        val c = controller ?: return
+        val at = (c.currentMediaItemIndex + 1).coerceIn(0, c.mediaItemCount)
+        val list = _queue.value.toMutableList()
+        val insertAt = (_currentIndex.value + 1).coerceIn(0, list.size)
+        if (list.none { it.id == track.id }) list.add(insertAt, track)
+        _queue.value = list
+        runCatching {
+            c.addMediaItem(at, toMediaItem(track))
+            applyModes(c)
+        }
+        persistQueue()
+    }
+
     /** Call from a ticker (e.g. LaunchedEffect) to keep progress fresh. */
     fun tick() {
         runCatching {

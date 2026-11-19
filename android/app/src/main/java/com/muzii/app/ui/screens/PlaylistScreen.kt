@@ -1,5 +1,8 @@
 package com.muzii.app.ui.screens
 
+import com.muzii.app.ui.theme.TextSecondary
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +42,8 @@ fun PlaylistScreen(
     dislikedIds: List<String> = emptyList(),
     onToggleLike: (Track) -> Unit = {},
     onToggleDislike: (Track) -> Unit = {},
+    /** Shuffle-play this playlist. The web has had this; the phone did not. */
+    onShufflePlay: (() -> Unit)? = null,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -53,16 +58,31 @@ fun PlaylistScreen(
         }
         Text(
             playlist.description,
-            color = Color.Gray,
+            // Color.Gray here and TextSecondary everywhere else: two slightly
+            // different greys in the same app read as a mistake.
+            color = TextSecondary,
             modifier = Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.bodySmall,
         )
-        Button(
-            onClick = { if (tracks.isNotEmpty()) onPlayTrack(tracks.first(), tracks) },
+        Row(
             modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text("Play all")
+            Button(onClick = { if (tracks.isNotEmpty()) onPlayTrack(tracks.first(), tracks) }) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Play all")
+            }
+            if (onShufflePlay != null) {
+                Spacer(Modifier.width(10.dp))
+                OutlinedButton(
+                    onClick = { if (tracks.isNotEmpty()) onShufflePlay() },
+                ) {
+                    Icon(Icons.Filled.Shuffle, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Shuffle")
+                }
+            }
         }
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             itemsIndexed(tracks) { index, track ->

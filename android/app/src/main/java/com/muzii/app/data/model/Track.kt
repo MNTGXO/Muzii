@@ -20,6 +20,25 @@ data class Track(
     val composer: String? = null,
 )
 
+/**
+ * Wire form of a track for jam payloads.
+ *
+ * `streamUrl` is intentionally omitted: the room only needs identity and
+ * display metadata, and each guest resolves audio through the Worker itself.
+ */
+fun Track.toJamMap(): Map<String, Any> = buildMap {
+    put("id", id)
+    put("title", title)
+    put("artist", artist)
+    put("album", album)
+    put("durationSec", durationSec)
+    put("artworkUrl", artworkUrl)
+    put("gradientSeed", gradientSeed)
+    language?.let { put("language", it) }
+    year?.let { put("year", it) }
+    composer?.let { put("composer", it) }
+}
+
 /** A track inside a jam room, as the Worker serialises it. */
 data class JamTrack(
     val id: String,
