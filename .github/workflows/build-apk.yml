@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  # Used only to post a build failure report (see the last step).
+  issues: write
 
 jobs:
   build-apk:
@@ -47,7 +49,7 @@ jobs:
         working-directory: android
         env:
           MUZII_API_BASE_URL: ${{ vars.WORKER_URL || 'https://muzii.pages.dev/' }}
-        run: gradle assembleRelease --stacktrace
+        run: gradle assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
 
       # Rename before uploading so the downloaded file is obviously *the*
       # app, not `app-release.apk`.
@@ -82,3 +84,28 @@ jobs:
           files: dist/muzii.apk
           draft: false
           prerelease: false
+
+      # Build logs are hard to reach from a phone or a restricted network.
+      # When the build breaks, post the compiler errors as a comment so they
+      # are readable without digging through the Actions UI.
+      - name: Report build failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+        run: |
+          if [ ! -f /tmp/build.log ]; then exit 0; fi
+          {
+            echo "### APK build failed"
+            echo '```'
+            grep -E "(^e: |error:|Caused by:|What went wrong|> Task .*FAILED)" /tmp/build.log | head -40
+            echo '```'
+            echo '<details><summary>last 60 lines</summary>'
+            echo '```'
+            tail -60 /tmp/build.log
+            echo '```'
+            echo '</details>'
+          } > /tmp/report.md
+          gh issue comment "$PR_NUMBER" --body-file /tmp/report.md \
+            || gh api "repos/${{ github.repository }}/commits/${GITHUB_SHA}/comments" \
+                 -f body="$(cat /tmp/report.md)" || true

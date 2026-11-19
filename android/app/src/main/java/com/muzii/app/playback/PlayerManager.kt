@@ -85,7 +85,8 @@ object PlayerManager {
         if (controllerFuture != null) return
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(context, token).buildAsync()
-        controllerFuture!!.addListener(
+        val future = controllerFuture ?: return
+        future.addListener(
             {
                 // get() throws if the service could not be bound (e.g. the
                 // media session was destroyed while the app was in the
@@ -93,26 +94,23 @@ object PlayerManager {
                 // exception is delivered on the main thread and would take
                 // the whole app down, so it must be caught here and the
                 // resource torn down for a later retry.
-                runCatching { controllerFuture?.get() }
-                    .onSuccess { connected ->
-                        controller = connected
-                        connected?.addListener(Listener)
-                        _ready.value = true
-                        // Play anything the user queued before connecting.
-                        val tracks = pendingQueue
-                        if (tracks != null) {
-                            runCatching { startPlayback(connected, tracks, pendingIndex) }
-                            pendingQueue = null
-                        }
-                    }
-                    .onFailure {
-                        controllerFuture?.let { future ->
-                            runCatching { MediaController.releaseFuture(future) }
-                        }
-                        controllerFuture = null
-                        controller = null
-                        _ready.value = false
-                    }
+                val connected = runCatching { future.get() }.getOrNull()
+                if (connected == null) {
+                    runCatching { MediaController.releaseFuture(future) }
+                    controllerFuture = null
+                    controller = null
+                    _ready.value = false
+                    return@addListener
+                }
+                controller = connected
+                connected.addListener(Listener)
+                _ready.value = true
+                // Play anything the user queued before connecting.
+                val tracks = pendingQueue
+                if (tracks != null) {
+                    runCatching { startPlayback(connected, tracks, pendingIndex) }
+                    pendingQueue = null
+                }
             },
             ContextCompat.getMainExecutor(context),
         )
