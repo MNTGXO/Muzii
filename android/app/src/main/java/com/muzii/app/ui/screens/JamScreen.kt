@@ -1,5 +1,7 @@
 package com.muzii.app.ui.screens
 
+import androidx.compose.material.icons.filled.Share
+import android.content.Intent
 import com.muzii.app.data.model.toJamMap
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.collectAsState
@@ -64,6 +66,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun JamScreen() {
     val api = remember { JamApiFactory.create() }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("") }
@@ -125,8 +128,11 @@ fun JamScreen() {
         }
     }
 
-    // Follow the room's playback.
-    LaunchedEffect(state?.currentTrack?.id) {
+    // Follow the room's playback — but never when we ARE the room. A host that
+    // followed its own sync would drag its player back to a stale position
+    // every 4 seconds, which reads as the music randomly jumping.
+    LaunchedEffect(state?.currentTrack?.id, hosting) {
+        if (hosting) return@LaunchedEffect
         val track = state?.currentTrack ?: return@LaunchedEffect
         if (PlayerManager.current?.id != track.id) {
             val queue = state?.queue?.map { it.toTrack() } ?: return@LaunchedEffect
@@ -165,6 +171,30 @@ fun JamScreen() {
                         modifier = Modifier.size(12.dp),
                     )
                 }
+                Spacer(Modifier.weight(1f))
+                // Inviting someone required reading the code out loud. A share
+                // sheet is how a phone is supposed to do this.
+                IconButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                "Join my Muzii Jam — code ${room.code}.\n" +
+                                    "Open https://muzii.pages.dev and enter the code.",
+                            )
+                        }
+                        context.startActivity(
+                            Intent.createChooser(intent, "Invite to jam"),
+                        )
+                    },
+                ) {
+                    Icon(
+                        Icons.Filled.Share,
+                        contentDescription = "Share jam code",
+                        tint = TextSecondary,
+                    )
+                }
             }
             Text(
                 "${room.hostName}'s Jam",
@@ -176,6 +206,30 @@ fun JamScreen() {
                 color = TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
+            /*
+             * Show the code, large and selectable.
+             *
+             * The room never displayed its own code anywhere — you could be in
+             * a jam and have no way to tell a friend what to join.
+             */
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    room.code,
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SurfaceElevated)
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "share this code",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
             room.currentTrack?.let { track ->
