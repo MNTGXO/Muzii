@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +46,8 @@ fun HomeScreen(
     isPlaying: Boolean,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
+    onStartRadio: (Track) -> Unit = {},
+    onOpenJam: () -> Unit = {},
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
@@ -105,6 +108,38 @@ fun HomeScreen(
                             Text("Play")
                         }
                     }
+                }
+            }
+        }
+        item {
+            // Muzii Jam entry point (shared listening).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0x29FA2D48), Color(0x1FBF5AF2)),
+                        ),
+                    )
+                    .clickable(onClick = onOpenJam)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Groups,
+                    contentDescription = null,
+                    tint = Color.White,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Start a Jam", color = Color.White)
+                    Text(
+                        "Listen together — every device stays in sync.",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -172,6 +207,7 @@ fun HomeScreen(
                 isActive = track.id == currentTrackId,
                 isPlaying = isPlaying,
                 onClick = { onPlayTrack(track, tracks) },
+                onStartRadio = { onStartRadio(track) },
             )
         }
         item { Spacer(Modifier.height(120.dp)) }

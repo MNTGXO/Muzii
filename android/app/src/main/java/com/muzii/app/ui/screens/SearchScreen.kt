@@ -31,6 +31,7 @@ fun SearchScreen(
     isPlaying: Boolean,
     onQueryChange: (String) -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
+    onStartRadio: (Track) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -64,9 +65,9 @@ fun SearchScreen(
                     index = index,
                     isActive = track.id == currentTrackId,
                     isPlaying = isPlaying,
-                ) {
-                    onPlayTrack(track, results)
-                }
+                    onClick = { onPlayTrack(track, results) },
+                    onStartRadio = { onStartRadio(track) },
+                )
             }
             item { Spacer(Modifier.height(120.dp)) }
         }

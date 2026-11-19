@@ -36,6 +36,37 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
         }
     }
 
+    /**
+     * "What plays next" for a song radio: same artist and vibe, never the
+     * seed and never anything already played this session. Falls back to the
+     * local catalog when the Worker can't help, so a radio never dead-ends.
+     */
+    suspend fun radio(seed: Track, played: List<String>): List<Track> {
+        val remote = runCatching {
+            api.radio(
+                seedId = seed.id,
+                title = seed.title,
+                artist = seed.artist,
+                exclude = played.joinToString(","),
+                limit = 10,
+            )
+        }.getOrElse { emptyList() }
+
+        val usable = remote.filter { it.id != seed.id }.map {
+            it.copy(streamUrl = proxiedStreamUrl(it.id))
+        }
+        if (usable.isNotEmpty()) return usable
+
+        // Local fallback: same artist first, then the rest of the catalog.
+        val artist = seed.artist.split(",", "&", "feat.", "ft.").firstOrNull()?.trim() ?: seed.artist
+        val catalog = runCatching { getCatalog() }.getOrElse { DemoCatalog.TRACKS }
+        val playedIds = played.toSet()
+        return catalog
+            .filter { it.id != seed.id && it.id !in playedIds }
+            .sortedByDescending { it.artist.contains(artist, ignoreCase = true) }
+            .take(10)
+    }
+
     private fun proxiedStreamUrl(id: String): String =
         BuildConfig.API_BASE_URL.trimEnd('/') + "/api/stream/$id"
 }

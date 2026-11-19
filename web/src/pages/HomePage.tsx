@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, Sparkles } from 'lucide-react';
+import { Play, Radio, Sparkles, Users } from 'lucide-react';
 import { getCatalog, getPlaylists } from '../api/client';
 import type { Playlist, Track } from '../api/types';
 import { usePlayer } from '../player/PlayerContext';
@@ -16,8 +16,10 @@ function greeting(): string {
 
 export function HomePage({
   onOpenPlaylist,
+  onOpenJam,
 }: {
   onOpenPlaylist: (id: string) => void;
+  onOpenJam: () => void;
 }) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -90,6 +92,23 @@ export function HomePage({
         </section>
       )}
 
+      <section className="jam-promo" onClick={onOpenJam} role="button" tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onOpenJam();
+        }}
+      >
+        <div className="jam-promo-icon">
+          <Users size={20} />
+        </div>
+        <div className="jam-promo-text">
+          <strong>Start a Jam</strong>
+          <span>Listen together — everyone adds songs, every device stays in sync.</span>
+        </div>
+        <span className="jam-promo-cta">
+          <Radio size={14} /> Open
+        </span>
+      </section>
+
       {recent.length > 0 && (
         <section>
           <h2 className="section-title">Recently played</h2>
@@ -100,7 +119,10 @@ export function HomePage({
                 <button
                   key={t.id}
                   className={`quick-card${active ? ' active' : ''}`}
-                  onClick={() => playQueue(recent, recent.findIndex((r) => r.id === t.id))}
+                  onClick={() => {
+                    const at = recent.findIndex((r) => r.id === t.id);
+                    playQueue(recent, at, 'manual');
+                  }}
                 >
                   <Artwork track={t} size={48} radius={10} />
                   <span className="quick-meta">

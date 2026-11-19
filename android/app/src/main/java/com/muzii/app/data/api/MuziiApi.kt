@@ -20,6 +20,20 @@ interface MuziiApi {
     @GET("api/search") suspend fun search(@Query("q") q: String): List<Track>
 
     @GET("api/track/{id}") suspend fun getTrack(@Path("id") id: String): Track
+
+    /**
+     * Song radio: what to play after [seedId]. `exclude` is the comma
+     * separated list of tracks already played this session, so the backend
+     * never sends one of them back.
+     */
+    @GET("api/radio")
+    suspend fun radio(
+        @Query("seedId") seedId: String,
+        @Query("title") title: String,
+        @Query("artist") artist: String,
+        @Query("exclude") exclude: String,
+        @Query("limit") limit: Int = 10,
+    ): List<Track>
 }
 
 object MuziiApiFactory {

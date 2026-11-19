@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -27,6 +28,7 @@ import com.muzii.app.playback.PlayerManager
 import com.muzii.app.ui.components.MiniPlayerBar
 import com.muzii.app.ui.screens.HomeScreen
 import com.muzii.app.ui.screens.LibraryScreen
+import com.muzii.app.ui.screens.JamScreen
 import com.muzii.app.ui.screens.NowPlayingScreen
 import com.muzii.app.ui.screens.PlaylistScreen
 import com.muzii.app.ui.screens.SearchScreen
@@ -37,6 +39,7 @@ private enum class Tab(val label: String) {
     HOME("Home"),
     SEARCH("Search"),
     LIBRARY("Library"),
+    JAM("Jam"),
 }
 
 @Composable
@@ -103,6 +106,12 @@ fun MuziiNav(
                         icon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
                         label = { Text(Tab.LIBRARY.label) },
                     )
+                    NavigationBarItem(
+                        selected = tab == Tab.JAM,
+                        onClick = { tab = Tab.JAM },
+                        icon = { Icon(Icons.Filled.Podcasts, contentDescription = null) },
+                        label = { Text(Tab.JAM.label) },
+                    )
                 }
             }
         },
@@ -122,6 +131,7 @@ fun MuziiNav(
                     isPlaying = isPlaying,
                     onBack = { openPlaylist = null },
                     onPlayTrack = playTrack,
+                    onStartRadio = { track -> PlayerManager.startRadio(track) },
                 )
             } else {
                 when (tab) {
@@ -132,6 +142,8 @@ fun MuziiNav(
                         isPlaying = isPlaying,
                         onPlayTrack = playTrack,
                         onOpenPlaylist = { openPlaylist = it },
+                        onStartRadio = { track -> PlayerManager.startRadio(track) },
+                        onOpenJam = { tab = Tab.JAM },
                     )
                     Tab.SEARCH -> SearchScreen(
                         query = searchQuery,
@@ -140,11 +152,13 @@ fun MuziiNav(
                         isPlaying = isPlaying,
                         onQueryChange = onQueryChange,
                         onPlayTrack = playTrack,
+                        onStartRadio = { track -> PlayerManager.startRadio(track) },
                     )
                     Tab.LIBRARY -> LibraryScreen(
                         playlists = playlists,
                         onOpenPlaylist = { openPlaylist = it },
                     )
+                    Tab.JAM -> JamScreen()
                 }
             }
         }

@@ -26,8 +26,15 @@ export interface Playlist {
   gradient: string;
 }
 
+export interface DurableObjectNamespaceLike {
+  idFromName(name: string): DurableObjectId;
+  get(id: DurableObjectId): DurableObjectStub;
+}
+
 export interface Env {
   APP_NAME: string;
   PROVIDER: string;
   CATALOG?: KVNamespace;
+  /** Durable Object namespace backing Muzii Jam rooms (optional in dev). */
+  JAM_ROOMS?: DurableObjectNamespaceLike;
 }

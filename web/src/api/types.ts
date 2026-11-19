@@ -18,3 +18,19 @@ export interface Playlist {
   tracks?: Track[];
   gradient: string;
 }
+
+/** A jam member as seen by clients. */
+export interface JamState {
+  code: string;
+  hostName: string;
+  locked: boolean;
+  active: boolean;
+  queue: Track[];
+  index: number;
+  currentTrack: Track | null;
+  /** Server-computed position of the current track, for late joiners. */
+  positionMs: number;
+  members: string[];
+  messages: { id: string; author: string; text: string; at: number }[];
+  createdAt: number;
+}

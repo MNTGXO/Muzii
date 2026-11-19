@@ -4,6 +4,8 @@ import { DemoProvider } from './providers/demo';
 import { providerChain } from './providers';
 import { adBlockedResponse, isAdRequest } from './adblock';
 import { handleStream } from './stream';
+import { buildRadio } from './radio';
+import { JamRoom, newCode } from './jam';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -64,6 +66,27 @@ const playlistListIsEmpty = (value: unknown) =>
   value.length === 0 ||
   value.every((pl: any) => !Array.isArray(pl?.tracks) || pl.tracks.length === 0);
 const isNullish = (value: unknown) => value === null || value === undefined;
+
+/**
+ * Dev fallback for jam rooms. Durable Objects require a binding (see
+ * wrangler.toml); when it is absent — plain `wrangler dev`, tests — jams are
+ * kept in module memory on the single local instance. Ephemeral by design,
+ * and it keeps `npm run dev` fully usable without provisioning anything.
+ */
+const localRooms = new Map<string, JamRoom>();
+
+function localJamFetch(request: Request, code: string): Promise<Response> {
+  // Reuse one room instance per code so its in-memory state is kept when no
+  // Durable Object binding is available (plain `wrangler dev`, tests).
+  let room = localRooms.get(code);
+  if (!room) {
+    room = new JamRoom({} as unknown as DurableObjectStorage);
+    localRooms.set(code, room);
+  }
+  return room.fetch(request);
+}
+
+export { JamRoom };
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -138,10 +161,65 @@ export default {
         return json({ error: 'stream-unavailable' }, 502);
       }
 
+      // Song radio — "play the next song in this lane, never the same one".
+      if (url.pathname === '/api/radio') {
+        const seedId = url.searchParams.get('seedId') ?? '';
+        const seedTitle = url.searchParams.get('title') ?? '';
+        const seedArtist = url.searchParams.get('artist') ?? '';
+        if (!seedId && !seedTitle) return json([]);
+        const exclude = (url.searchParams.get('exclude') ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const limit = Number(url.searchParams.get('limit') ?? 12);
+        const tracks = await buildRadio(chain, {
+          seedId,
+          seedTitle,
+          seedArtist,
+          exclude,
+          limit,
+        });
+        return json(tracks);
+      }
+
+      // ---- Muzii Jam (shared listening rooms) ----
+      if (url.pathname === '/api/jam' && request.method === 'POST') {
+        const body = (await request.json().catch(() => ({}))) as { name?: string };
+        const code = newCode();
+        const room = env.JAM_ROOMS ? env.JAM_ROOMS.get(env.JAM_ROOMS.idFromName(code)) : null;
+        const roomRequest = new Request(`https://jam/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: body.name ?? 'Host', code }),
+        });
+        const res = room ? await room.fetch(roomRequest) : await localJamFetch(roomRequest, code);
+        return new Response(res.body, {
+          status: res.status,
+          headers: { 'Content-Type': 'application/json', ...CORS },
+        });
+      }
+
+      const jamMatch = url.pathname.match(/^\/api\/jam\/([A-Za-z0-9]+)(\/.*)?$/);
+      if (jamMatch) {
+        const code = jamMatch[1].toUpperCase();
+        const sub = (jamMatch[2] ?? '').replace(/^\//, '');
+        const room = env.JAM_ROOMS ? env.JAM_ROOMS.get(env.JAM_ROOMS.idFromName(code)) : null;
+        const target = new Request(`https://jam/${sub}`, {
+          method: request.method,
+          headers: { 'Content-Type': 'application/json' },
+          body: request.method === 'POST' ? await request.text() : undefined,
+        });
+        const res = room ? await room.fetch(target) : await localJamFetch(target, code);
+        return new Response(res.body, {
+          status: res.status,
+          headers: { 'Content-Type': 'application/json', ...CORS },
+        });
+      }
+
       return json(
         {
           error: 'not-found',
-          docs: 'GET /health | /api/catalog | /api/search?q= | /api/playlists | /api/track/:id | /api/stream/:id',
+          docs: 'GET /health | /api/catalog | /api/search?q= | /api/playlists | /api/track/:id | /api/stream/:id | /api/radio | /api/jam/:code',
         },
         404,
       );

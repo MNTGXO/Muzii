@@ -1,6 +1,6 @@
-import { Home, Library, Music2, Search, Shield } from 'lucide-react';
+import { Home, Library, Music2, Radio, Search, Shield } from 'lucide-react';
 
-export type Page = 'home' | 'search' | 'library';
+export type Page = 'home' | 'search' | 'library' | 'jam';
 
 export function Sidebar({
   page,
@@ -26,6 +26,10 @@ export function Sidebar({
         </button>
         <button className={page === 'library' ? 'active' : ''} onClick={() => onNavigate('library')}>
           <Library size={20} /> Library
+        </button>
+        <button className={page === 'jam' ? 'active' : ''} onClick={() => onNavigate('jam')}>
+          <Radio size={20} /> Jam
+          <span className="nav-badge">NEW</span>
         </button>
       </nav>
       <div className="sidebar-foot">
