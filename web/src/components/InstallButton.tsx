@@ -1,27 +1,26 @@
-import { useEffect, useState } from 'react';
-import { Download, Share, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Share, X } from 'lucide-react';
 
 /**
- * "Install Muzii" — a real install button, not a link to instructions.
+ * "Install Muzii" — a real install button, and an honest one.
  *
- * Why this is not one line of code: browsers gate installation behind
- * platform rules.
+ * Two things this deliberately does NOT do:
  *
- *  - Chrome / Edge (desktop + Android) fire `beforeinstallprompt` when the
- *    app is installable. We hold that event and call prompt() on tap, which
- *    is the only way to open the install dialog at a moment of the user's
- *    choosing. If the event never fires, the app is NOT installable — so the
- *    button must not appear and pretend otherwise.
- *  - iOS Safari has no such API at all. The honest thing is to show the
- *    Share → "Add to Home Screen" hint instead of a button that does nothing.
- *  - Already installed (running standalone) → show nothing.
+ *  1. It never shows a button when the browser hasn't offered an install
+ *     prompt. `beforeinstallprompt` firing is the browser's own statement
+ *     that the app qualifies; without it there is nothing to trigger.
  *
- * Getting installability right is mostly the manifest: Chrome requires PNG
- * icons at 192 and 512 px. This manifest previously listed only an SVG, so
- * it could never be installed from Chrome no matter what the UI offered.
+ *  2. It never claims success unless install actually happened. The old
+ *     version set "installed" the moment the prompt resolved, which meant the
+ *     UI could say "installed" while the browser aborted (NotFoundError, a
+ *     navigation, a cancelled intent). The fix is to hold the prompt, call
+ *     prompt() exactly once, and then decide from the `appinstalled` event
+ *     and the choice outcome — not from optimism.
+ *
+ * A prompt event is single-use by specification: calling prompt() twice
+ * throws. So the event is captured into a ref and cleared after one use.
  */
 
-/** The non-standard event Chrome fires; not in lib.dom.d.ts. */
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -33,7 +32,7 @@ function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   return (
     window.matchMedia?.('(display-mode: standalone)').matches ||
-    // iOS Safari's own flag.
+    window.matchMedia?.('(display-mode: minimal-ui)').matches ||
     (window.navigator as unknown as { standalone?: boolean }).standalone === true
   );
 }
@@ -44,9 +43,12 @@ function isIos(): boolean {
   return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && 'ontouchend' in document);
 }
 
+type Phase = 'idle' | 'working' | 'failed' | 'installed';
+
 export function InstallButton() {
-  const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
+  const [promptEvent, setPromptEvent] = useState<InstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => isStandalone());
+  const [phase, setPhase] = useState<Phase>('idle');
   const [dismissed, setDismissed] = useState(() => {
     try {
       return window.localStorage.getItem(DISMISS_KEY) === '1';
@@ -54,17 +56,21 @@ export function InstallButton() {
       return false;
     }
   });
+  /** Guards against a double-tap calling prompt() twice (it throws). */
+  const usedRef = useRef(false);
 
   useEffect(() => {
     const onPrompt = (e: Event) => {
-      // Chrome shows its own mini-infobar unless this is prevented; we want
-      // our own button instead.
+      // Chrome draws its own mini-infobar unless this is prevented; we want
+      // our own button at a moment the user chooses.
       e.preventDefault();
-      setPrompt(e as InstallPromptEvent);
+      usedRef.current = false;
+      setPromptEvent(e as InstallPromptEvent);
     };
     const onInstalled = () => {
       setInstalled(true);
-      setPrompt(null);
+      setPhase('installed');
+      setPromptEvent(null);
     };
     window.addEventListener('beforeinstallprompt', onPrompt);
     window.addEventListener('appinstalled', onInstalled);
@@ -73,6 +79,26 @@ export function InstallButton() {
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, []);
+
+  // While an install prompt is pending the browser can silently resolve it
+  // with nothing happening. Poll the display mode briefly afterwards so the
+  // UI reflects reality instead of hoping.
+  const watchForStandalone = () => {
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      if (isStandalone()) {
+        setInstalled(true);
+        setPhase('installed');
+        clearInterval(id);
+      } else if (tries >= 20) {
+        clearInterval(id);
+        // Ten seconds and still running in a tab: the install did not
+        // happen. Say so rather than leaving a success message.
+        setPhase((p) => (p === 'working' ? 'failed' : p));
+      }
+    }, 500);
+  };
 
   if (installed || dismissed) return null;
 
@@ -85,8 +111,8 @@ export function InstallButton() {
     }
   };
 
-  // iOS: there is no prompt API, so offer the real instructions.
-  if (isIos() && !prompt) {
+  // iOS Safari has no prompt API at all; the honest thing is the real steps.
+  if (isIos() && !promptEvent) {
     return (
       <div className="install-banner">
         <div className="install-text">
@@ -102,30 +128,80 @@ export function InstallButton() {
     );
   }
 
-  // Desktop/Android without a captured prompt: the app isn't installable yet
-  // (or already was). Stay quiet rather than showing a dead button.
-  if (!prompt) return null;
+  /*
+   * Show the banner when there is a live prompt to act on, OR a failure worth
+   * reporting. Hiding it the instant a prompt fails would erase the only
+   * explanation the user gets - they tapped Install, saw "Installing…", and
+   * the banner would simply vanish with no word about what happened.
+   */
+  if (!promptEvent && phase !== 'failed' && phase !== 'working') return null;
 
   return (
     <div className="install-banner">
       <div className="install-text">
-        <strong>Install Muzii</strong>
-        <span>Opens like an app — no browser bar, works offline.</span>
+        <strong>
+          {phase === 'failed'
+            ? 'Install didn’t finish'
+            : phase === 'working'
+              ? 'Installing Muzii…'
+              : 'Install Muzii'}
+        </strong>
+        <span>
+          {phase === 'failed'
+            ? 'Your browser blocked it. Use the browser menu → “Install app”, or open Muzii in Chrome.'
+            : phase === 'working'
+              ? 'Confirming with your browser — this only takes a moment.'
+              : 'Opens like an app — no browser bar, works offline.'}
+        </span>
       </div>
+      {/*
+        Only render the action when there is a live prompt to use. A disabled
+        button after a failure is worse than no button: it invites a tap that
+        cannot do anything.
+      */}
+      {promptEvent && (
       <button
         className="btn-primary install-action"
+        disabled={phase === 'working'}
         onClick={async () => {
-          await prompt.prompt();
-          const choice = await prompt.userChoice.catch(() => null);
-          // A dismissed prompt must not nag on every visit, but it should
-          // come back if they change their mind later.
-          setPrompt(null);
-          if (choice?.outcome === 'accepted') setInstalled(true);
-          else hide();
+          if (usedRef.current) return;
+          usedRef.current = true;
+          setPhase('working');
+          // prompt() can throw *synchronously-ish* before returning a promise
+          // (NotFoundError when the app is not installable at this instant),
+          // and userChoice rejects if the prompt is dismissed by navigation.
+          // The reported bug was the button sitting on "Installing…" forever
+          // because the throw was caught but the state was never moved off
+          // `working` before the catch ran. Clear the pending event first,
+          // then decide.
+          const pending = promptEvent;
+          setPromptEvent(null);
+          try {
+            await pending.prompt();
+            const choice = await pending.userChoice.catch(() => null);
+            if (choice?.outcome === 'accepted') {
+              // Accepted, but the browser may still abort the install. Confirm
+              // from the display mode rather than asserting success.
+              watchForStandalone();
+            } else {
+              setPhase('idle');
+              hide();
+            }
+          } catch {
+            // Not an install. Say so, and leave a way to retry.
+            setPhase('failed');
+          }
         }}
       >
-        <Download size={16} /> Install
+        {phase === 'working' ? (
+          <>Installing…</>
+        ) : (
+          <>
+            <Check size={16} /> Install
+          </>
+        )}
       </button>
+      )}
       <button className="install-dismiss" onClick={hide} aria-label="Dismiss">
         <X size={16} />
       </button>

@@ -184,6 +184,26 @@ export function energyOf(track: {
   return 0.5;
 }
 
+/**
+ * Devotional / non-film content: bhajans, chants, hymns.
+ *
+ * A 1975 "Harivarasanam" chant sitting in a queue of 1990s Malayalam film
+ * melodies is the clearest "this does not feel like the same thing" failure,
+ * and no amount of era/composer scoring fixes it because it is a different
+ * *kind* of recording, not a different decade. Dropped unless the seed is
+ * itself devotional.
+ */
+const DEVOTIONAL_CUES = [
+  'bhajan', 'devotional', 'harivarasanam', 'suprabhatam', 'kirtan', 'kirtanam',
+  'namasankirtanam', 'ashtakam', 'stotram', 'chalisa', 'aarti', 'mantra',
+  'hymn', 'qawwali', 'naat', 'shloka', 'vandana', 'sahasranamam',
+];
+
+export function isDevotional(track: { title: string; album?: string }): boolean {
+  const hay = `${track.title} ${track.album ?? ''}`.toLowerCase();
+  return DEVOTIONAL_CUES.some((cue) => hay.includes(cue));
+}
+
 export interface TasteProfile {
   /** Disliked track ids - never returned. */
   avoid?: string[];
@@ -249,7 +269,10 @@ function scoreTrack(
 
   // 2. Composer (Harris Jayaraj, A. R. Rahman...) - strong "feel" match.
   if (seed.composer && track.composer) {
-    if (track.composer.toLowerCase() === seed.composer.toLowerCase()) score += 55;
+    // Same music director is the single strongest "same feel" signal the
+    // catalog gives us: one composer defines a whole era's sound. Raised from
+    // 55 so a coherent lane forms instead of a scattered one.
+    if (track.composer.toLowerCase() === seed.composer.toLowerCase()) score += 75;
   }
   if (track.composer && lovedComposers.has(track.composer.toLowerCase())) score += 35;
 
@@ -369,6 +392,36 @@ export async function buildRadio(
     )
     .sort((a, b) => b.score - a.score);
 
+  /*
+   * Era as a FILTER, not a score nudge.
+   *
+   * This is the "make it like YT Music" fix. Era used to contribute +20 / -25
+   * inside a 12-year window, which is far too weak to beat an artist (+70) or
+   * composer (+55) match - so a 2016 song and a 1975 devotional could both
+   * land in a queue seeded from a 1996 melody. Measured against the real
+   * screenshot, our queue spanned 41 years where YT Music's spanned 9.
+   *
+   * A candidate must now be within ERA_SPAN years of the seed. The span is
+   * generous on purpose: YT's own queue covered 1992-2001 from a 1996 seed,
+   * so anything tighter would throw away good matches.
+   */
+  const ERA_SPAN = 15;
+  const eraInLane = (track: Track) => nearEra(track.year, seed.year, ERA_SPAN);
+  const seedIsDevotional = isDevotional({ title: seedTitle });
+  /** Style gate: a chant never follows a film melody, or vice versa. */
+  const styleInLane = (track: Track) =>
+    seedIsDevotional === isDevotional(track);
+
+  const withEra = ranked.filter(({ track }) => eraInLane(track));
+  const withStyle = withEra.filter(({ track }) => styleInLane(track));
+  /*
+   * Prefer the fully-filtered set, but never dead-end a station: fall back to
+   * era-only, then to the unfiltered ranking. A thin catalog must still play.
+   */
+  const coherent =
+    withStyle.length >= limit ? withStyle : withEra.length >= limit ? withEra : ranked;
+  const rankedAll = coherent;
+
   // Hard language preference. Score alone is not enough: a wrong-language
   // song still lands in the top band when the catalog is thin, and shuffling
   // the band would then promote it. If there are enough in-language songs,
@@ -376,10 +429,10 @@ export async function buildRadio(
   // last resort so a station can never dead-end.
   const seedLang = normLang(seed.language);
   const inLanguage = seedLang
-    ? ranked.filter(({ track }) => !track.language || sameLang(track.language, seedLang))
-    : ranked;
+    ? rankedAll.filter(({ track }) => !track.language || sameLang(track.language, seedLang))
+    : rankedAll;
   const offLanguage = seedLang
-    ? ranked.filter(({ track }) => track.language && !sameLang(track.language, seedLang))
+    ? rankedAll.filter(({ track }) => track.language && !sameLang(track.language, seedLang))
     : [];
   // Pad with other languages ONLY if the station would otherwise be too
   // short to fill a queue. On a real catalog this never triggers (there are
@@ -394,7 +447,11 @@ export async function buildRadio(
   // score-(-60) track sit above a score-(+100) one.
   const buckets = new Map<number, Track[]>();
   for (const { track, score } of rankedFinal) {
-    const band = Math.round(score / 25) * 25;
+    // 15-point bands (was 25): a 25-point band is wide enough that a
+    // wrong-era track could sit in the top band and get shuffled to the
+    // front. Tighter bands keep the ordering meaningful while still giving
+    // variety inside a band.
+    const band = Math.round(score / 15) * 15;
     const list = buckets.get(band);
     if (list) list.push(track);
     else buckets.set(band, [track]);

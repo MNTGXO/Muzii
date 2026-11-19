@@ -11,7 +11,7 @@
  * - Old caches are purged on activate.
  */
 // Bumped whenever the shell changes, so activate() purges the old copy.
-const CACHE = 'muzii-v3';
+const CACHE = 'muzii-v4';
 const SHELL = [
   '/',
   '/index.html',
@@ -55,6 +55,21 @@ self.addEventListener('fetch', (e) => {
 
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(fetch(request));
+    return;
+  }
+
+  /*
+   * The manifest and the icons decide installability, so they must always be
+   * fresh. A cached old manifest (missing PNG icons, wrong display mode)
+   * makes Chrome refuse to install even after a corrected deploy - and the
+   * user just sees "installing" and nothing else. Network-first, no caching.
+   */
+  if (
+    url.pathname === '/manifest.webmanifest' ||
+    /\.(png|svg)$/.test(url.pathname) ||
+    url.pathname === '/sw.js'
+  ) {
+    e.respondWith(fetch(request).catch(() => caches.match(request).then((r) => r ?? Response.error())));
     return;
   }
 
