@@ -56,9 +56,16 @@ export async function searchTracks(q: string): Promise<Track[]> {
   }
 }
 
-export async function getPlaylists(): Promise<Playlist[]> {
+/**
+ * Playlists, scoped to the onboarding languages when given. The Worker builds
+ * them from the same language list, so a Malayalam-only listener no longer
+ * gets "Bollywood Hits" and "Chill Vibes" on their home screen.
+ */
+export async function getPlaylists(languages: string[] = []): Promise<Playlist[]> {
+  const langs = languages.filter(Boolean);
+  const qs = langs.length ? `?languages=${encodeURIComponent(langs.join(','))}` : '';
   try {
-    return await apiFetch<Playlist[]>('/api/playlists');
+    return await apiFetch<Playlist[]>(`/api/playlists${qs}`);
   } catch {
     return DEMO_PLAYLISTS;
   }

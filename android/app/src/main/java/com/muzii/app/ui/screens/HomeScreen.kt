@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
@@ -55,6 +56,8 @@ fun HomeScreen(
     dislikedIds: List<String> = emptyList(),
     onToggleLike: (Track) -> Unit = {},
     onToggleDislike: (Track) -> Unit = {},
+    offline: Boolean = false,
+    onRetry: () -> Unit = {},
 ) {
     // Responsive card sizing: two-and-a-bit cards on a phone, more on a
     // tablet or in landscape, instead of one fixed 150.dp everywhere.
@@ -66,6 +69,37 @@ fun HomeScreen(
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
+        if (offline) {
+            item {
+                // The demo catalog means the Worker is unreachable. Say so:
+                // silently showing 16 stock tracks looked like a broken app.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0x33FF9F0A))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Can't reach Muzii right now",
+                            color = Color(0xFFFFD60A),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "These are offline sample tracks. Check your connection and retry.",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = onRetry) { Text("Retry") }
+                }
+            }
+        }
         item {
             Text(
                 "Good evening",

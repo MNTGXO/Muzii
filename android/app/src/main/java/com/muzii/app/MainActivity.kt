@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
                 val onboarded by viewModel.onboarded.collectAsState()
                 val likedIds by viewModel.likedIds.collectAsState()
                 val dislikedIds by viewModel.dislikedIds.collectAsState()
+                val offline by viewModel.offline.collectAsState()
                 MuziiNav(
                     tracks = tracks,
                     playlists = playlists,
@@ -40,6 +41,8 @@ class MainActivity : ComponentActivity() {
                     dislikedIds = dislikedIds,
                     onToggleLike = viewModel::toggleLike,
                     onToggleDislike = viewModel::toggleDislike,
+                    offline = offline,
+                    onRetry = viewModel::retry,
                 )
             }
         }

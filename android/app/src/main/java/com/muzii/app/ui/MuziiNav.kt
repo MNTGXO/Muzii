@@ -57,6 +57,9 @@ fun MuziiNav(
     dislikedIds: List<String> = emptyList(),
     onToggleLike: (Track) -> Unit = {},
     onToggleDislike: (Track) -> Unit = {},
+    /** True when the catalog is the bundled demo set (backend unreachable). */
+    offline: Boolean = false,
+    onRetry: () -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var showNowPlaying by remember { mutableStateOf(false) }
@@ -169,6 +172,8 @@ fun MuziiNav(
                         dislikedIds = dislikedIds,
                         onToggleLike = onToggleLike,
                         onToggleDislike = onToggleDislike,
+                        offline = offline,
+                        onRetry = onRetry,
                     )
                     Tab.SEARCH -> SearchScreen(
                         query = searchQuery,

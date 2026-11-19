@@ -18,6 +18,7 @@ import {
   remember,
   hasPlayed,
   sameLanguage,
+  trackKey,
   type TrackHistory,
 } from './queue';
 
@@ -82,12 +83,24 @@ export function usePlayer(): PlayerContextValue {
 const STORAGE_KEY = 'muzii-player-v2';
 const HISTORY_KEY = 'muzii-history-v1';
 
-function loadPersisted(): { queue: Track[]; index: number; source: QueueSource } {
+interface Persisted {
+  queue: Track[];
+  index: number;
+  source: QueueSource;
+  /** Playback position (seconds) of the current track. */
+  position: number;
+  /** Whether the player was playing when the page unloaded. */
+  wasPlaying: boolean;
+}
+
+function loadPersisted(): Persisted {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as {
       queue?: Track[];
       index?: number;
       source?: QueueSource;
+      position?: number;
+      wasPlaying?: boolean;
     };
     const queue = Array.isArray(raw.queue) ? raw.queue : [];
     const index = Number.isInteger(raw.index) ? (raw.index as number) : 0;
@@ -95,9 +108,11 @@ function loadPersisted(): { queue: Track[]; index: number; source: QueueSource }
       queue,
       index: index >= 0 && index < Math.max(queue.length, 1) ? index : 0,
       source: raw.source ?? 'manual',
+      position: Number.isFinite(raw.position) ? Math.max(0, raw.position as number) : 0,
+      wasPlaying: Boolean(raw.wasPlaying),
     };
   } catch {
-    return { queue: [], index: 0, source: 'manual' };
+    return { queue: [], index: 0, source: 'manual', position: 0, wasPlaying: false };
   }
 }
 
@@ -125,6 +140,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const attemptRef = useRef(0);
 
   const persisted = useRef(loadPersisted());
+  /**
+   * Position to restore on the next track load. Set from localStorage on a
+   * refresh so the song continues instead of restarting at 0:00.
+   */
+  const resumeRef = useRef<number>(persisted.current.position);
   const [queue, setQueue] = useState<Track[]>(persisted.current.queue);
   const [index, setIndex] = useState<number>(persisted.current.index);
   const [queueSource, setQueueSource] = useState<QueueSource>(persisted.current.source);
@@ -153,6 +173,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const current = queue[index] ?? null;
   const stateRef = useRef({ queue, index, shuffle, repeat, queueSource });
   stateRef.current = { queue, index, shuffle, repeat, queueSource };
+  /** Mirrors `progress` for the persist effect without re-subscribing. */
+  const progressRef = useRef(0);
+  progressRef.current = progress;
 
   const setCatalog = useCallback((tracks: Track[]) => {
     catalogRef.current = tracks;
@@ -380,9 +403,36 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setError(null);
     setBuffering(true);
 
+    // Buffering must never be sticky: if the proxy stalls and the browser
+    // fires neither 'playing' nor 'error', the play button would keep showing
+    // a spinner forever (it looked like an empty white circle). Give up after
+    // 20s and surface the error state instead.
+    const bufferGuard = setTimeout(() => {
+      setBuffering(false);
+      setError((prev) => prev ?? 'This track is taking too long to load.');
+    }, 20_000);
+    const clearGuard = () => clearTimeout(bufferGuard);
+    audio.addEventListener('playing', clearGuard, { once: true });
+    audio.addEventListener('error', clearGuard, { once: true });
+
     // Every track we actually start counts as "played" — this is what stops
     // the same song coming back later in the session.
     remember(historyRef.current, current);
+
+    // Refresh shouldn't restart the song: restore where we were, but only
+    // for the track that was actually current when the page went away.
+    const resumeAt = resumeRef.current;
+    resumeRef.current = 0;
+    if (resumeAt > 1) {
+      const seek = () => {
+        try {
+          audio.currentTime = resumeAt;
+        } catch {
+          /* metadata not ready */
+        }
+      };
+      audio.addEventListener('loadedmetadata', seek, { once: true });
+    }
 
     audio.src = streamUrl(current);
     void audio.play().catch(() => {
@@ -401,6 +451,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           : [],
       });
     }
+    return () => {
+      clearGuard();
+      audio.removeEventListener('playing', clearGuard);
+      audio.removeEventListener('error', clearGuard);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
@@ -469,10 +524,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [next, prev]);
 
-  // Persist queue + history so a reload doesn't replay songs.
+  // Persist queue + history so a reload doesn't replay songs, plus the
+  // playback position and whether we were playing — that combination is what
+  // makes a refresh feel like nothing happened.
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ queue, index, source: queueSource }));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          queue,
+          index,
+          source: queueSource,
+          position: progressRef.current,
+          wasPlaying: isPlaying,
+        }),
+      );
       const history = historyRef.current;
       localStorage.setItem(
         HISTORY_KEY,
@@ -484,25 +550,54 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } catch {
       /* storage unavailable — ignore */
     }
-  }, [queue, index, queueSource, current?.id]);
+    // `progress` changes every second; writing localStorage that often is
+    // fine (a few hundred bytes) and a refresh then resumes mid-song.
+  }, [queue, index, queueSource, current?.id, isPlaying]);
 
-  const playQueue = useCallback((tracks: Track[], startIndex = 0, source: QueueSource = 'manual') => {
-    if (!tracks.length) return;
-    const safe = Math.max(0, Math.min(startIndex, tracks.length - 1));
-    setQueueSource(source);
-    setQueue(tracks);
-    setIndex(safe);
+  /**
+   * Collapse versions of the same recording in a list the listener picked.
+   *
+   * Search results and playlists are full of them ("Innale (K.J.Yesudas)
+   * (from "Balettan")" vs "Innale (Chithra) (from "Balettan")"), and putting
+   * the raw rows in the queue is what made it look like the app kept
+   * replaying one song. The clicked track always survives.
+   */
+  const dedupeContext = useCallback((tracks: Track[], keepId?: string): Track[] => {
+    const seen = new Set<string>();
+    const out: Track[] = [];
+    for (const track of tracks) {
+      if (!track?.id) continue;
+      const key = trackKey(track);
+      if (seen.has(key) && track.id !== keepId) continue;
+      seen.add(key);
+      out.push(track);
+    }
+    return out;
   }, []);
+
+  const playQueue = useCallback(
+    (tracks: Track[], startIndex = 0, source: QueueSource = 'manual') => {
+      if (!tracks.length) return;
+      const anchor = tracks[Math.max(0, Math.min(startIndex, tracks.length - 1))];
+      const list = dedupeContext(tracks, anchor?.id);
+      const safe = Math.max(0, list.findIndex((t) => t.id === anchor?.id));
+      setQueueSource(source);
+      setQueue(list);
+      setIndex(Math.max(0, safe));
+    },
+    [dedupeContext],
+  );
 
   const playTrack = useCallback(
     (track: Track, context?: Track[]) => {
-      const list = context && context.length ? context : [track];
+      const raw = context && context.length ? context : [track];
+      const list = dedupeContext(raw, track.id);
       const i = list.findIndex((t) => t.id === track.id);
       setQueueSource('manual');
       setQueue(list);
       setIndex(i >= 0 ? i : 0);
     },
-    [],
+    [dedupeContext],
   );
 
   const startRadio = useCallback(

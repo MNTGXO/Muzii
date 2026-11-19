@@ -236,17 +236,22 @@ object PlayerManager {
             )
             .build()
 
-    private fun keyOf(track: Track): String {
-        fun clean(value: String) = value
-            .lowercase()
-            .replace(Regex("\\([^)]*\\)|\\[[^\\]]*\\]"), " ")
-            .replace(Regex("\\s-\\s.*$"), " ")
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        val artist = track.artist.split(",", "&", "feat.", "ft.").firstOrNull() ?: track.artist
-        return "${clean(track.title)}|${clean(artist)}"
-    }
+    /**
+     * Identity of a song for the no-repeat rule: the title alone.
+     *
+     * The same recording appears repeatedly with different singer credits and
+     * the album name baked into the title ("Innale (K.J.Yesudas) (from
+     * "Balettan")" vs "Innale (Chithra) (from "Balettan")"). Including the
+     * artist let each variant into the queue. Mirrors normalizeKey() in
+     * worker/src/radio.ts and trackKey() in web/src/player/queue.ts.
+     */
+    private fun keyOf(track: Track): String = track.title
+        .lowercase()
+        .replace(Regex("\\([^)]*\\)|\\[[^\\]]*\\]"), " ")
+        .replace(Regex("\\s-\\s.*$"), " ")
+        .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
     private fun markPlayed(track: Track) {
         playedIds.add(track.id)

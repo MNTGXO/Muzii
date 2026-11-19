@@ -33,6 +33,14 @@ class MuziiViewModel(
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    /**
+     * True when the catalog fell back to the 16 bundled demo tracks, which
+     * means the backend is unreachable. The home screen shows a banner so
+     * "why am I seeing SoundHelix songs" has an answer.
+     */
+    private val _offline = MutableStateFlow(false)
+    val offline: StateFlow<Boolean> = _offline.asStateFlow()
+
     private var searchJob: Job? = null
 
     /** True until the listener picks languages (or skips). */
@@ -44,6 +52,7 @@ class MuziiViewModel(
         viewModelScope.launch {
             // The catalog is language-scoped, so taste must be loaded first.
             _tracks.value = repository.getCatalog()
+            _offline.value = repository.usingDemoCatalog
             _loading.value = false
             _searchResults.value = _tracks.value
             _playlists.value = repository.getPlaylists()
@@ -81,6 +90,7 @@ class MuziiViewModel(
         viewModelScope.launch {
             _loading.value = true
             _tracks.value = repository.getCatalog()
+            _offline.value = repository.usingDemoCatalog
             _playlists.value = repository.getPlaylists()
             _loading.value = false
         }

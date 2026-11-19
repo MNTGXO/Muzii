@@ -31,16 +31,33 @@ function primaryArtistOf(artist: string): string {
 }
 
 /** Strip punctuation, bracketed suffixes, and casing so near-duplicates match. */
-export function normalizeKey(title: string, artist: string): string {
-  const clean = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
-      .replace(/\s-\s.*$/, ' ')
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  return `${clean(title)}|${clean(primaryArtistOf(artist))}`;
+export function cleanTitle(title: string): string {
+  return title
+    .toLowerCase()
+    // "(K.J.Yesudas) (from "Balettan")", "[Remastered 2011]", "- Reprise"
+    .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
+    .replace(/\s-\s.*$/, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Identity of a *song*, used for the no-repeat rule.
+ *
+ * This deliberately keys on the **title alone**. The same recording appears
+ * many times in these catalogs — "Innale (K.J.Yesudas) (from "Balettan")",
+ * "Innale (K.J.Yesudas)", "Innale (Chithra) (from "Balettan")" are one song
+ * with different singer credits and an album tag baked into the title. Keying
+ * on title+artist let all of them into a single queue, which is exactly the
+ * "queue keeps playing the same song" bug.
+ *
+ * Collisions between genuinely different songs that share a generic title
+ * ("Kannamma", "Kadhal") are the acceptable trade-off: playing one cover
+ * instead of two near-identical uploads is the better failure.
+ */
+export function normalizeKey(title: string, _artist?: string): string {
+  return cleanTitle(title);
 }
 
 function seededShuffle<T>(items: T[], seed: string): T[] {
