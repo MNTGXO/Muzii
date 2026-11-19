@@ -13,8 +13,8 @@ native **Android app** (Kotlin + Jetpack Compose), backed by a
 └──────────────┘      │  proxy + adblock │      └─────────────────────┘
                       └──────────────────┘
                               │
-                      upstream music provider
-                      (demo = royalty-free samples)
+              upstream music provider (YouTube Music via
+              InnerTube; demo catalog as automatic fallback)
 ```
 
 ## Why Cloudflare Workers (not Vercel)?
@@ -107,13 +107,29 @@ android/   Kotlin + Compose Android app (Media3 background playback)
 .github/   APK build/release workflow + Cloudflare deploy workflow
 ```
 
-## Music provider
+## Music provider: YouTube Music (not Spotify)
 
-The demo provider (`worker/src/providers/demo.ts`) serves royalty-free sample
-streams so everything runs with zero API keys. For a real product, implement
-`MusicProvider` (`worker/src/providers/types.ts`) against a licensed catalog
-(JioSaavn, YouTube Music, SoundCloud, or your own label deals) — the web and
-Android clients need no changes.
+The Worker ships with a **YouTube Music provider** (`worker/src/providers/youtube.ts`)
+built on the unofficial InnerTube API (`ANDROID_MUSIC` client), plus a demo
+provider as automatic fallback.
+
+**Why YouTube Music over Spotify?**
+
+| | YouTube Music (InnerTube) | Spotify |
+|---|---|---|
+| Audio streams | ✅ Stream URLs returned by the player endpoint — proxyable | ❌ DRM-protected, Premium-only via proprietary SDK — cannot be proxied |
+| Metadata (search, playlists) | ✅ Same API | ✅ Official Web API (better quality) |
+| Official support | ❌ Unofficial — Google can break it | ✅ Official, but audio still locked |
+| ToS | ⚠️ Unofficial use | ❌ Stream extraction explicitly forbidden |
+
+Spotify is the better *metadata* source but cannot supply audio to a
+proxy-based app. YouTube Music is the only viable audio source here (same
+approach as open-source apps like Spotube). Trade-offs are handled:
+stream URLs expire (~6h) so they're resolved lazily at stream time
+(`resolveStreamUrl`), and any InnerTube failure falls back to the demo
+catalog automatically. A Spotify metadata layer can be added later behind
+the same `MusicProvider` interface — the web and Android clients need no
+changes either way.
 
 ## Roadmap
 

@@ -15,4 +15,10 @@ export interface MusicProvider {
   getTrack(id: string): Promise<Track | null>;
   getPlaylists(): Promise<Playlist[]>;
   getLyrics(trackId: string): Promise<string[]>;
+  /**
+   * Resolve a playable audio URL for a track id. Providers with expiring
+   * URLs (e.g. YouTube Music) resolve lazily at stream time; providers with
+   * stable URLs (demo) return the track's streamUrl directly.
+   */
+  resolveStreamUrl(id: string): Promise<string | null>;
 }

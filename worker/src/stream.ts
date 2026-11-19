@@ -22,12 +22,28 @@ export async function handleStream(
     });
   }
 
-  const upstreamUrl = new URL(track.streamUrl);
+  // Providers with expiring URLs (YouTube Music) store a marker scheme;
+  // resolve a fresh audio URL at stream time.
+  let upstreamUrlStr = track.streamUrl;
+  if (upstreamUrlStr.startsWith('ytmusic://')) {
+    const videoId = upstreamUrlStr.slice('ytmusic://'.length);
+    const resolved = await provider.resolveStreamUrl(videoId);
+    if (!resolved) {
+      return new Response(JSON.stringify({ error: 'stream-unavailable' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    upstreamUrlStr = resolved;
+  }
+
+  const upstreamUrl = new URL(upstreamUrlStr);
   if (isAdRequest(upstreamUrl)) return adBlockedResponse(upstreamUrl);
 
   const range = request.headers.get('Range');
   const cache = caches.default;
-  const cacheKey = new Request(upstreamUrl.toString(), { method: 'GET' });
+  // Cache by track id — upstream URLs may expire (YouTube Music).
+  const cacheKey = new Request(`https://muzii.cache/stream/${id}`, { method: 'GET' });
 
   if (!range) {
     const cached = await cache.match(cacheKey);

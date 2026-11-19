@@ -100,4 +100,8 @@ export class DemoProvider implements MusicProvider {
   async getLyrics(_trackId: string): Promise<string[]> {
     return [];
   }
+
+  async resolveStreamUrl(id: string): Promise<string | null> {
+    return (await this.getTrack(id))?.streamUrl ?? null;
+  }
 }

@@ -4,9 +4,11 @@ compatibility_date = "2024-09-23"
 
 [vars]
 APP_NAME = "Muzii"
-# Upstream music provider: "demo" (built-in sample catalog).
-# Plug a licensed provider here — see src/providers/types.ts.
-PROVIDER = "demo"
+# Upstream music provider: "youtube" (YouTube Music via InnerTube) or
+# "demo" (built-in sample catalog). If the configured provider fails, the
+# Worker automatically falls back to the demo catalog.
+# See src/providers/types.ts for the provider interface.
+PROVIDER = "youtube"
 
 # Optional: KV namespace for catalog caching.
 # Create with: wrangler kv namespace create CATALOG
