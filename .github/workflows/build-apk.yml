@@ -76,8 +76,8 @@ jobs:
             Grab the APK below and install it on your phone
             (allow "install from unknown sources" if prompted).
 
-            - **muzii-release.apk** — recommended
-            - **muzii-debug.apk** — for development
+            - **app-release.apk** — recommended
+            - **app-debug.apk** — for development
 
             Ad-free streaming + background play, Apple-Music-style UI.
           files: |
