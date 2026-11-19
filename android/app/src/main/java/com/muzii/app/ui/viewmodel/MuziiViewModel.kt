@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
 import com.muzii.app.data.repository.MuziiRepository
+import com.muzii.app.data.taste.TasteStore
 import com.muzii.app.playback.PlayerManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -34,9 +35,14 @@ class MuziiViewModel(
 
     private var searchJob: Job? = null
 
+    /** True until the listener picks languages (or skips). */
+    val onboarded: StateFlow<Boolean> = TasteStore.onboarded
+    val likedIds: StateFlow<List<String>> = TasteStore.likedIds
+    val dislikedIds: StateFlow<List<String>> = TasteStore.dislikedIds
+
     init {
         viewModelScope.launch {
-            // Fetch in parallel: a slow playlist call shouldn't delay the catalog.
+            // The catalog is language-scoped, so taste must be loaded first.
             _tracks.value = repository.getCatalog()
             _loading.value = false
             _searchResults.value = _tracks.value
@@ -77,6 +83,33 @@ class MuziiViewModel(
             _tracks.value = repository.getCatalog()
             _playlists.value = repository.getPlaylists()
             _loading.value = false
+        }
+    }
+
+    /** Called by onboarding once the listener picks their languages. */
+    fun completeOnboarding(languages: List<String>) {
+        if (languages.isEmpty()) {
+            TasteStore.markOnboarded()
+        } else {
+            TasteStore.setLanguages(languages)
+        }
+        // The feed is language-scoped, so reload it immediately.
+        retry()
+    }
+
+    fun toggleLike(track: Track) {
+        TasteStore.toggleLike(track)
+        // A like also nudges the current station: any future fetch will
+        // boost this artist/composer.
+    }
+
+    fun toggleDislike(track: Track) {
+        TasteStore.toggleDislike(track)
+        // If the disliked song is playing, skip away from it right now.
+        if (PlayerManager.current?.id == track.id) {
+            PlayerManager.next()
+        } else {
+            PlayerManager.dropDisliked(TasteStore.dislikedIds.value)
         }
     }
 }

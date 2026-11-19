@@ -2,39 +2,45 @@ import type { MusicProvider } from './providers/types';
 import type { Track } from './types';
 
 /**
- * "Song radio" — the queue that plays after the song you picked.
+ * "Song radio" - the queue that plays after the song you picked.
  *
- * The app's queue rule (from the product brief): if you play *Arikil Pathiye*
- * the next track must be something in that lane (*Thoominnal*), never the same
- * song again, and never something already played this session.
+ * The product rule (from the brief): if you play *Arikil Pathiye* the next
+ * track must be something in that lane (*Thoominnal*) - same language, same
+ * mood - never the same song again, and never something already played.
+ * Critically it must not drift: a Malayalam station that jumps to a Telugu
+ * song is the bug this file exists to prevent.
  *
- * Strategy:
- * 1. Ask the provider for more songs from the seed's artist(s).
- * 2. Ask for songs that share words with the seed title (language-agnostic;
- *    JioSaavn's search handles Malayalam/Hindi queries well).
- * 3. Interleave the two result sets so the queue alternates between
- *    "same artist" and "same vibe" instead of dumping one artist block.
- * 4. Drop the seed itself, anything in `exclude` (already played), and
- *    anything that looks like the same recording (same normalised
- *    title+artist, so "Song" and "Song (Remastered)" don't both appear).
+ * Signals used, strongest first:
+ *  1. Language - a Malayalam station stays Malayalam.
+ *  2. Composer - Harris Jayaraj tracks sound like Harris Jayaraj.
+ *  3. Seed artist - same singer is the original "this lane" signal.
+ *  4. Era - within ~12 years keeps a station from jumping decades.
+ *  5. Title words - a weak "sounds like" probe.
+ *
+ * Taste profile (stored client-side, forwarded here):
+ *  - `avoid` - disliked ids, dropped outright.
+ *  - `loved` - liked ids; their artists/composers are boosted.
  *
  * Everything is best-effort: an empty result tells the client to fall back to
- * the loaded catalog, which is what it did before this endpoint existed.
+ * the loaded catalog, which applies the same no-repeat rules locally.
  */
+
+/** Primary artist of a credit string ("A, B & C" -> "A"). */
+function primaryArtistOf(artist: string): string {
+  return (artist.split(/,|&|feat\.?|ft\.?/i)[0] ?? artist).trim();
+}
 
 /** Strip punctuation, bracketed suffixes, and casing so near-duplicates match. */
 export function normalizeKey(title: string, artist: string): string {
   const clean = (value: string) =>
     value
       .toLowerCase()
-      // "(From "Kumbalangi Nights")", "[Remastered 2011]", "- Reprise"
       .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
       .replace(/\s-\s.*$/, ' ')
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-  const primaryArtist = artist.split(/,|&|feat\.?|ft\.?/i)[0] ?? artist;
-  return `${clean(title)}|${clean(primaryArtist)}`;
+  return `${clean(title)}|${clean(primaryArtistOf(artist))}`;
 }
 
 function seededShuffle<T>(items: T[], seed: string): T[] {
@@ -59,29 +65,93 @@ function seededShuffle<T>(items: T[], seed: string): T[] {
   return copy;
 }
 
-/** Interleave arrays round-robin so the queue alternates sources. */
-function interleave<T>(groups: T[][]): T[] {
-  const out: T[] = [];
-  const longest = Math.max(0, ...groups.map((g) => g.length));
-  for (let i = 0; i < longest; i++) {
-    for (const group of groups) {
-      if (i < group.length) out.push(group[i]);
-    }
-  }
-  return out;
+/** Lowercased, comparable form of a language string. */
+function normLang(value?: string): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
-function primaryArtist(artist: string): string {
-  return (artist.split(/,|&|feat\.?|ft\.?/i)[0] ?? artist).trim();
+function sameLang(a?: string, b?: string): boolean {
+  const la = normLang(a);
+  const lb = normLang(b);
+  if (!la || !lb) return false;
+  return la === lb || la.includes(lb) || lb.includes(la);
+}
+
+/** Within `span` years - unknown years are treated as compatible. */
+function nearEra(a?: number, b?: number, span = 12): boolean {
+  if (!a || !b) return true;
+  return Math.abs(a - b) <= span;
+}
+
+export interface TasteProfile {
+  /** Disliked track ids - never returned. */
+  avoid?: string[];
+  /** Liked track ids - their artists/composers are boosted. */
+  loved?: string[];
+  /** Language the listener picked at onboarding, e.g. "malayalam". */
+  language?: string;
 }
 
 export interface RadioRequest {
   seedTitle: string;
   seedArtist: string;
   seedId: string;
-  /** Track ids already heard this session — never returned. */
+  /** Track ids already heard this session - never returned. */
   exclude: string[];
   limit?: number;
+  /** Seed metadata, so the station can stay in its language/era. */
+  seedLanguage?: string;
+  seedComposer?: string;
+  seedYear?: number;
+  /** The songs the listener already loves/dislikes. */
+  taste?: TasteProfile;
+}
+
+interface Seed {
+  artist: string;
+  language?: string;
+  composer?: string;
+  year?: number;
+}
+
+/**
+ * Rank a candidate against the seed. Higher is "more like this".
+ * Weights are deliberately coarse: they must be robust across catalogs,
+ * not musically perfect.
+ */
+function scoreTrack(
+  track: Track,
+  seed: Seed,
+  lovedArtists: Set<string>,
+  lovedComposers: Set<string>,
+): number {
+  let score = 0;
+
+  // 1. Language - the single most important "don't jump languages" guard.
+  if (sameLang(track.language, seed.language)) score += 100;
+  // Unknown language is a mild risk, not a disqualification.
+  else if (!track.language || !seed.language) score += 25;
+  else score -= 60;
+
+  // 2. Composer (Harris Jayaraj, A. R. Rahman...) - strong "feel" match.
+  if (seed.composer && track.composer) {
+    if (track.composer.toLowerCase() === seed.composer.toLowerCase()) score += 55;
+  }
+  if (track.composer && lovedComposers.has(track.composer.toLowerCase())) score += 35;
+
+  // 3. Seed artist, or an artist the listener has liked.
+  const artist = primaryArtistOf(track.artist).toLowerCase();
+  if (seed.artist && artist === seed.artist.toLowerCase()) score += 70;
+  else if (lovedArtists.has(artist)) score += 30;
+
+  // 4. Era - keeps a station from hopping 1995 -> 2024.
+  if (nearEra(track.year, seed.year)) score += 20;
+  else score -= 25;
+
+  // 5. Tiny stable tiebreak so results are deterministic.
+  if (track.artworkUrl) score += 2;
+
+  return score;
 }
 
 export async function buildRadio(
@@ -90,11 +160,28 @@ export async function buildRadio(
 ): Promise<Track[]> {
   const { seedTitle, seedArtist, seedId, exclude } = request;
   const limit = Math.min(Math.max(request.limit ?? 12, 1), 40);
-  const artist = primaryArtist(seedArtist);
+  const artist = primaryArtistOf(seedArtist);
+  const taste = request.taste ?? {};
+  const seedLanguage = normLang(request.seedLanguage) || undefined;
+  const seedComposer = request.seedComposer?.trim() || undefined;
+  const seedYear = request.seedYear;
 
-  const queries = [`${artist} songs`, `${artist} hits`];
-  // Title words make a decent "sounds like" probe on these catalogs, but
-  // long titles make noise — keep the two most meaningful words.
+  const provider = chain[0] ?? null;
+  if (!provider) return [];
+
+  // Query several lanes in parallel. Language goes into the query itself so
+  // the catalog filters - far more reliable than hoping a generic result set
+  // happens to contain enough of the right language to rank.
+  const queries: string[] = [];
+  if (seedLanguage) queries.push(`${seedLanguage} songs`);
+  if (seedComposer) queries.push(`${seedComposer} hits`);
+  queries.push(`${artist} songs`);
+  if (seedLanguage) {
+    queries.push(
+      [seedLanguage, 'hits', seedYear ? String(seedYear) : ''].join(' ').trim(),
+    );
+  }
+
   const words = seedTitle
     .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
     .split(/\s+/)
@@ -102,38 +189,125 @@ export async function buildRadio(
     .slice(0, 2);
   if (words.length) queries.push(words.join(' '));
 
-  const provider = chain[0] ?? null;
-  if (!provider) return [];
-
+  const uniqueQueries = [...new Set(queries)].slice(0, 5);
   const results = await Promise.all(
-    queries.map((q) => provider.search(q).catch(() => [] as Track[])),
+    uniqueQueries.map((q) => provider.search(q).catch(() => [] as Track[])),
   );
 
+  // ---- filtering ----------------------------------------------------------
+  const avoidIds = new Set(taste.avoid ?? []);
   const excludedIds = new Set([seedId, ...exclude]);
   const seedKey = normalizeKey(seedTitle, seedArtist);
   const seenKeys = new Set<string>([seedKey]);
   const seenIds = new Set<string>();
 
-  const pick = (tracks: Track[]): Track[] => {
-    const out: Track[] = [];
-    for (const track of tracks) {
-      if (excludedIds.has(track.id) || seenIds.has(track.id)) continue;
+  // Liked tracks tell us which artists/composers to lean into. We resolve
+  // them from the pool we already fetched rather than refetching by id.
+  const lovedArtists = new Set<string>();
+  const lovedComposers = new Set<string>();
+  const lovedSet = new Set(taste.loved ?? []);
+  const dislikedArtists = new Map<string, number>();
+
+  for (const batch of results) {
+    for (const track of batch) {
+      const artistKey = primaryArtistOf(track.artist).toLowerCase();
+      if (lovedSet.has(track.id)) {
+        lovedArtists.add(artistKey);
+        if (track.composer) lovedComposers.add(track.composer.toLowerCase());
+      }
+      if (avoidIds.has(track.id)) {
+        dislikedArtists.set(artistKey, (dislikedArtists.get(artistKey) ?? 0) + 1);
+      }
+    }
+  }
+
+  const seed: Seed = {
+    artist,
+    language: seedLanguage,
+    composer: seedComposer,
+    year: seedYear,
+  };
+
+  const scored: { track: Track; score: number }[] = [];
+  for (const batch of results) {
+    for (const track of batch) {
+      if (!track?.id) continue;
+      if (excludedIds.has(track.id) || avoidIds.has(track.id)) continue;
+      if (seenIds.has(track.id)) continue;
       const key = normalizeKey(track.title, track.artist);
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
       seenIds.add(track.id);
-      out.push(track);
+      scored.push({
+        track,
+        score: scoreTrack(track, seed, lovedArtists, lovedComposers),
+      });
     }
-    return out;
-  };
+  }
 
-  // First query is "same artist" (lane A); the title probe is "same vibe".
-  const [laneA, laneB, laneC] = results.map((r) => pick(r ?? []));
-  const merged = interleave([
-    seededShuffle(laneA ?? [], seedId),
-    laneB ?? [],
-    laneC ?? [],
-  ]);
+  // Disliking three songs by one singer is a real signal; one bad upload is
+  // not. Drop an artist only after three dislikes.
+  const ranked = scored
+    .filter(
+      ({ track }) =>
+        (dislikedArtists.get(primaryArtistOf(track.artist).toLowerCase()) ?? 0) < 3,
+    )
+    .sort((a, b) => b.score - a.score);
 
-  return merged.slice(0, limit);
+  // Hard language preference. Score alone is not enough: a wrong-language
+  // song still lands in the top band when the catalog is thin, and shuffling
+  // the band would then promote it. If there are enough in-language songs,
+  // the out-of-language ones are dropped outright. They are kept only as a
+  // last resort so a station can never dead-end.
+  const seedLang = normLang(seed.language);
+  const inLanguage = seedLang
+    ? ranked.filter(({ track }) => !track.language || sameLang(track.language, seedLang))
+    : ranked;
+  const offLanguage = seedLang
+    ? ranked.filter(({ track }) => track.language && !sameLang(track.language, seedLang))
+    : [];
+  // Pad with other languages ONLY if the station would otherwise be too
+  // short to fill a queue. On a real catalog this never triggers (there are
+  // far more than `limit` songs in any language); it exists so a thin
+  // catalog still plays instead of dead-ending.
+  const rankedFinal =
+    inLanguage.length >= limit ? inLanguage : [...inLanguage, ...offLanguage];
+
+  // Keep variety WITHOUT destroying the ranking: bucket candidates by score
+  // band, shuffle inside each band (deterministic), then concatenate the
+  // bands in descending order. Shuffling the whole list would let a
+  // score-(-60) track sit above a score-(+100) one.
+  const buckets = new Map<number, Track[]>();
+  for (const { track, score } of rankedFinal) {
+    const band = Math.round(score / 25) * 25;
+    const list = buckets.get(band);
+    if (list) list.push(track);
+    else buckets.set(band, [track]);
+  }
+  const pool: Track[] = [...buckets.keys()]
+    .sort((a, b) => b - a)
+    .flatMap((band) => seededShuffle(buckets.get(band) ?? [], `${seedId}:${band}`))
+    .slice(0, Math.max(limit * 2, limit));
+
+  const out: Track[] = [];
+  const usedArtists = new Map<string, number>();
+
+  // Greedy: never stack three songs by the same artist in a row.
+  while (out.length < limit && pool.length) {
+    let chosen = -1;
+    for (let i = 0; i < pool.length; i++) {
+      const a = primaryArtistOf(pool[i].artist).toLowerCase();
+      if ((usedArtists.get(a) ?? 0) < 2) {
+        chosen = i;
+        break;
+      }
+    }
+    if (chosen === -1) chosen = 0;
+    const [item] = pool.splice(chosen, 1);
+    const a = primaryArtistOf(item.artist).toLowerCase();
+    usedArtists.set(a, (usedArtists.get(a) ?? 0) + 1);
+    out.push(item);
+  }
+
+  return out;
 }

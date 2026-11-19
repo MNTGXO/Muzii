@@ -7,6 +7,12 @@ export interface Track {
   streamUrl: string;
   artworkUrl: string;
   gradientSeed: number;
+  /** Spoken language, e.g. "malayalam". Drives the language-locked radio. */
+  language?: string;
+  /** Release year — used to keep a station in one era. */
+  year?: number;
+  /** Music director / composer — a strong "same feel" signal. */
+  composer?: string;
 }
 
 export interface Playlist {

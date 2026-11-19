@@ -12,10 +12,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbDownOffAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Track
+import com.muzii.app.ui.theme.ApplePink
 import com.muzii.app.ui.theme.TextSecondary
 
 @Composable
@@ -39,6 +44,11 @@ fun TrackRow(
     isPlaying: Boolean,
     onClick: () -> Unit,
     onStartRadio: (() -> Unit)? = null,
+    /** Taste: liked songs pull their artist up every later station. */
+    isLiked: Boolean = false,
+    isDisliked: Boolean = false,
+    onToggleLike: (() -> Unit)? = null,
+    onToggleDislike: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -57,15 +67,47 @@ fun TrackRow(
         Column(Modifier.weight(1f)) {
             Text(
                 text = track.title,
-                color = if (isActive) MaterialTheme.colorScheme.primary else Color.White,
+                color = when {
+                    isDisliked -> TextSecondary
+                    isActive -> MaterialTheme.colorScheme.primary
+                    isLiked -> ApplePink
+                    else -> Color.White
+                },
                 maxLines = 1,
+                textDecoration = if (isDisliked) {
+                    androidx.compose.ui.text.style.TextDecoration.LineThrough
+                } else {
+                    null
+                },
             )
             Text(
-                text = track.artist,
+                text = listOfNotNull(track.artist, track.language?.uppercase()).joinToString(" · "),
                 color = TextSecondary,
                 maxLines = 1,
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+        // Taste controls. Disliked rows stay tappable so the action can be
+        // undone; the title is dimmed and struck through instead.
+        if (onToggleLike != null) {
+            IconButton(onClick = onToggleLike) {
+                Icon(
+                    if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (isLiked) "Unlike" else "Like",
+                    tint = if (isLiked) ApplePink else TextSecondary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        if (onToggleDislike != null) {
+            IconButton(onClick = onToggleDislike) {
+                Icon(
+                    if (isDisliked) Icons.Filled.ThumbDown else Icons.Filled.ThumbDownOffAlt,
+                    contentDescription = if (isDisliked) "Undo dislike" else "Not for me",
+                    tint = if (isDisliked) Color(0xFF64D2FF) else TextSecondary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         // Song radio: same artist / same vibe, never repeats this song.
         if (onStartRadio != null) {

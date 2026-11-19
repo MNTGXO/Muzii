@@ -10,12 +10,14 @@ import {
 } from 'react';
 import type { Track } from '../api/types';
 import { getRadio, streamUrl } from '../api/client';
+import { tasteParams, type TasteSnapshot } from '../taste/store';
 import {
   createHistory,
   localRadio,
   pickFresh,
   remember,
   hasPlayed,
+  sameLanguage,
   type TrackHistory,
 } from './queue';
 
@@ -60,6 +62,13 @@ interface PlayerContextValue {
   retry: () => void;
   /** Catalog snapshot used for local radio fallback. */
   setCatalog: (tracks: Track[]) => void;
+  /**
+   * The listener's taste profile, needed here so the radio request itself
+   * can exclude disliked songs and lean towards liked artists.
+   */
+  setTaste: (taste: TasteSnapshot) => void;
+  /** Disliked ids — filtered out of every queue before it is shown. */
+  disliked: string[];
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -131,6 +140,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const historyRef = useRef<TrackHistory>(loadHistory());
   const catalogRef = useRef<Track[]>([]);
+  /**
+   * Taste snapshot used when asking for radio. Kept in a ref (not state) so
+   * extendQueue's closure never goes stale, and mirrored into state so the
+   * UI can react to dislikes.
+   */
+  const tasteRef = useRef<TasteSnapshot | null>(null);
+  const [disliked, setDisliked] = useState<string[]>([]);
   /** Guards against several `ended`/`next` events all fetching radio at once. */
   const extendLock = useRef(false);
 
@@ -140,6 +156,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const setCatalog = useCallback((tracks: Track[]) => {
     catalogRef.current = tracks;
+  }, []);
+
+  const setTaste = useCallback((taste: TasteSnapshot) => {
+    tasteRef.current = taste;
+    setDisliked((prev) =>
+      prev.length === taste.dislike.length && prev.every((id, i) => id === taste.dislike[i])
+        ? prev
+        : taste.dislike,
+    );
   }, []);
 
   /**
@@ -155,15 +180,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const { queue: q } = stateRef.current;
       const exclude = [...historyRef.current.ids].slice(-50);
 
+      const taste = tasteRef.current;
+      const dislikedIds = new Set(taste?.dislike ?? []);
+      // Exclude disliked songs, and anything that breaks the station's
+      // language. The Worker already filters both, but the local fallback
+      // below reads the whole catalog - without this the offline path can
+      // drop a Telugu song into a Malayalam station.
+      const seedLanguage = fromTrack.language ?? taste?.lang?.[0];
+      const usable = (tracks: Track[]) =>
+        sameLanguage(
+          tracks.filter((t) => !dislikedIds.has(t.id)),
+          seedLanguage,
+        );
+
       let fresh: Track[] = [];
-      const remote = await getRadio(fromTrack, exclude, count + 4);
+      const remote = await getRadio(
+        fromTrack,
+        exclude,
+        count + 4,
+        taste ? tasteParams(taste) : undefined,
+      );
       if (remote.length) {
-        fresh = pickFresh(remote, historyRef.current, q);
+        fresh = pickFresh(usable(remote), historyRef.current, q);
       }
       if (fresh.length < 3) {
-        // Not enough from the network — top up from the loaded catalog.
-        const local = localRadio(fromTrack, catalogRef.current, historyRef.current, count);
-        fresh = pickFresh([...fresh, ...local], historyRef.current, q);
+        // Not enough from the network — top up from the loaded catalog,
+        // still respecting the language the listener picked.
+        const catalog = usable(catalogRef.current);
+        const local = localRadio(fromTrack, catalog, historyRef.current, count);
+        fresh = pickFresh([...fresh, ...usable(local)], historyRef.current, q);
       }
       if (!fresh.length) return;
 
@@ -373,6 +418,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, queue.length, queueSource]);
 
+  // A song the listener just disliked must leave immediately — both from
+  // the queue and from the speakers (this is what "don't use that song in
+  // his feed" means in practice).
+  useEffect(() => {
+    if (!disliked.length || !current) return;
+    if (!disliked.includes(current.id)) {
+      // Also evict disliked songs sitting further down the queue.
+      setQueue((prev) => {
+        const filtered = prev.filter((t, i) => i === index || !disliked.includes(t.id));
+        return filtered.length === prev.length ? prev : filtered;
+      });
+      return;
+    }
+    next(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disliked, current?.id]);
+
   // Reflect playback state on the lock screen / notification.
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -568,6 +630,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       cycleRepeat,
       retry,
       setCatalog,
+      setTaste,
+      disliked,
     }),
     [
       current,
@@ -600,6 +664,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       cycleRepeat,
       retry,
       setCatalog,
+      setTaste,
+      disliked,
     ],
   );
 

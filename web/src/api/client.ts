@@ -99,6 +99,11 @@ export async function getRadio(
   seed: Track,
   exclude: string[],
   limit = 12,
+  /**
+   * Taste profile + language lock. Sent as query params so the Worker can
+   * filter disliked songs and keep the station in the seed's language.
+   */
+  taste?: URLSearchParams,
 ): Promise<Track[]> {
   const params = new URLSearchParams({
     seedId: seed.id,
@@ -106,11 +111,33 @@ export async function getRadio(
     artist: seed.artist,
     limit: String(limit),
   });
+  // Seed metadata is what makes the station stay in its lane.
+  if (seed.language) params.set('lang', seed.language);
+  if (seed.composer) params.set('composer', seed.composer);
+  if (seed.year) params.set('year', String(seed.year));
   if (exclude.length) params.set('exclude', exclude.slice(-40).join(','));
+  taste?.forEach((value, key) => {
+    if (value) params.set(key, value);
+  });
   try {
     return await apiFetch<Track[]>(`/api/radio?${params.toString()}`);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Language-scoped catalog for the home feed. Falls back to the unfiltered
+ * catalog if the Worker can't scope it, so the feed is never empty.
+ */
+export async function getCatalogForLanguages(languages: string[]): Promise<Track[]> {
+  const langs = languages.filter(Boolean);
+  if (!langs.length) return getCatalog();
+  try {
+    const params = new URLSearchParams({ languages: langs.join(',') });
+    return await apiFetch<Track[]>(`/api/catalog?${params.toString()}`);
+  } catch {
+    return getCatalog();
   }
 }
 

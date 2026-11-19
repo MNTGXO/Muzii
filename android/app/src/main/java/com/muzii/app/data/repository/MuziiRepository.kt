@@ -6,6 +6,7 @@ import com.muzii.app.data.api.MuziiApi
 import com.muzii.app.data.api.MuziiApiFactory
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
+import com.muzii.app.data.taste.TasteStore
 import kotlinx.coroutines.delay
 
 /**
@@ -27,8 +28,14 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
         return runCatching { block() }
     }
 
-    suspend fun getCatalog(): List<Track> = withRetry {
-        api.getCatalog().map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
+    /**
+     * Home feed, scoped to the languages picked at onboarding. An empty
+     * `languages` means "everything" (used before onboarding).
+     */
+    suspend fun getCatalog(
+        languages: String = TasteStore.languagesParam(),
+    ): List<Track> = withRetry {
+        api.getCatalog(languages).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
     }.getOrElse { DemoCatalog.TRACKS }
 
     suspend fun getPlaylists(): List<Playlist> {
@@ -64,20 +71,40 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
                 artist = seed.artist,
                 exclude = played.joinToString(","),
                 limit = 10,
+                // Seed metadata keeps the station in its own language; the
+                // taste profile keeps disliked songs out for good.
+                language = seed.language,
+                composer = seed.composer,
+                year = seed.year,
+                avoid = TasteStore.avoidParam().ifBlank { null },
+                loved = TasteStore.lovedParam().ifBlank { null },
+                prefLanguages = TasteStore.languagesParam().ifBlank { null },
             )
         }.getOrElse { emptyList() }
 
-        val usable = remote.filter { it.id != seed.id }.map {
-            it.copy(streamUrl = proxiedStreamUrl(it.id))
-        }
+        val disliked = TasteStore.dislikedIds.value.toSet()
+        val usable = remote
+            .filter { it.id != seed.id && it.id !in disliked }
+            .map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
         if (usable.isNotEmpty()) return usable
 
         // Local fallback: same artist first, then the rest of the catalog.
         val artist = seed.artist.split(",", "&", "feat.", "ft.").firstOrNull()?.trim() ?: seed.artist
         val catalog = runCatching { getCatalog() }.getOrElse { DemoCatalog.TRACKS }
         val playedIds = played.toSet()
+        val seedLanguage = seed.language?.lowercase()
         return catalog
-            .filter { it.id != seed.id && it.id !in playedIds }
+            .filter { track ->
+                track.id != seed.id &&
+                    track.id !in playedIds &&
+                    track.id !in TasteStore.dislikedIds.value &&
+                    // Never jump language: the fallback reads the whole
+                    // catalog, so it has to apply the same guard the
+                    // Worker does.
+                    (seedLanguage == null ||
+                        track.language == null ||
+                        track.language.lowercase() == seedLanguage)
+            }
             .sortedByDescending { it.artist.contains(artist, ignoreCase = true) }
             .take(10)
     }

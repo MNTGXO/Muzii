@@ -22,7 +22,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -39,30 +38,30 @@ jobs:
 
       # Point the APK at the deployed backend. Falls back to the public
       # Pages site, which proxies /api/* to the Worker.
-      - name: Build debug APK
-        working-directory: android
-        env:
-          MUZII_API_BASE_URL: ${{ vars.WORKER_URL || 'https://muzii.pages.dev/' }}
-        run: gradle assembleDebug --stacktrace
-
-      - name: Build release APK
+      #
+      # Only ONE APK is produced. Shipping both a debug and a release APK
+      # meant two identical-looking downloads and no way to tell which to
+      # install; the debug build is also slower and carries test tooling.
+      # If you need a debug build, run `gradle assembleDebug` locally.
+      - name: Build APK
         working-directory: android
         env:
           MUZII_API_BASE_URL: ${{ vars.WORKER_URL || 'https://muzii.pages.dev/' }}
         run: gradle assembleRelease --stacktrace
 
-      - name: Upload debug APK (artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: muzii-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+      # Rename before uploading so the downloaded file is obviously *the*
+      # app, not `app-release.apk`.
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/*.apk dist/muzii.apk
+          ls -lh dist/
 
-      - name: Upload release APK (artifact)
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: muzii-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          name: muzii-apk
+          path: dist/muzii.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release with APK download
@@ -73,15 +72,13 @@ jobs:
           body: |
             ## Download Muzii for Android
 
-            Grab the APK below and install it on your phone
-            (allow "install from unknown sources" if prompted).
+            **`muzii.apk`** — install this one.
 
-            - **app-release.apk** — recommended
-            - **app-debug.apk** — for development
+            On your phone, open this page, tap `muzii.apk`, and allow
+            "install from unknown sources" if Android asks.
 
-            Ad-free streaming + background play, Apple-Music-style UI.
-          files: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/apk/debug/*.apk
+            Ad-free streaming, song radio that stays in your language, and
+            collaborative Jam rooms.
+          files: dist/muzii.apk
           draft: false
           prerelease: false

@@ -73,6 +73,32 @@ export function pickFresh(
   return out;
 }
 
+/** Normalised language string, for comparison. */
+function normLang(value?: string): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+/**
+ * Is this track allowed next to a seed in `language`?
+ *
+ * A known-but-different language is the one thing we never want: it is the
+ * "Malayalam song → Telugu song" jump that makes a station feel random.
+ * Unknown ('') is allowed, because most catalogs don't tag everything and
+ * dropping those would empty the queue.
+ */
+export function languageOk(track: Track, language?: string): boolean {
+  const seed = normLang(language);
+  if (!seed) return true;
+  const trackLang = normLang(track.language);
+  if (!trackLang) return true;
+  return trackLang === seed || trackLang.includes(seed) || seed.includes(trackLang);
+}
+
+/** Keep only tracks that don't break the station's language. */
+export function sameLanguage(tracks: Track[], language?: string): Track[] {
+  return language ? tracks.filter((t) => languageOk(t, language)) : tracks;
+}
+
 /**
  * Fallback radio when the backend can't be reached: prefer the same artist,
  * then the same catalog neighbourhood, and always honour the no-repeat rule.

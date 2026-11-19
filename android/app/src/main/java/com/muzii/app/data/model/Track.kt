@@ -12,6 +12,12 @@ data class Track(
     @SerializedName("streamUrl") val streamUrl: String,
     @SerializedName("artworkUrl") val artworkUrl: String,
     @SerializedName("gradientSeed") val gradientSeed: Int,
+    /** Spoken language, e.g. "malayalam" — drives the language-locked radio. */
+    val language: String? = null,
+    /** Release year — keeps a station in one era. */
+    val year: Int? = null,
+    /** Music director / composer — a strong "same feel" signal. */
+    val composer: String? = null,
 )
 
 /** A track inside a jam room, as the Worker serialises it. */
@@ -24,6 +30,9 @@ data class JamTrack(
     @SerializedName("streamUrl") val streamUrl: String,
     @SerializedName("artworkUrl") val artworkUrl: String,
     @SerializedName("gradientSeed") val gradientSeed: Int,
+    val language: String? = null,
+    val year: Int? = null,
+    val composer: String? = null,
 ) {
     /** Convert to the app's Track (jam tracks stream through the Worker). */
     fun toTrack(): Track = Track(
@@ -35,6 +44,9 @@ data class JamTrack(
         streamUrl = streamUrl,
         artworkUrl = artworkUrl,
         gradientSeed = gradientSeed,
+        language = language,
+        year = year,
+        composer = composer,
     )
 }
 

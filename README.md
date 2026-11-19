@@ -54,11 +54,23 @@ were a Next.js content site with no media proxying.)
 
 ## Features
 
-- 🔁 **Song radio that never repeats** — play *Arikil Pathiye* and the queue
-  continues in that lane (*Thoominnal* next). The queue refills itself when it
-  runs low, and nothing you have heard this session comes back — matched on
-  both track id *and* normalised title+artist, so a "Remastered" duplicate or
-  a re-upload can't sneak in (`worker/src/radio.ts`, `web/src/player/queue.ts`).
+- 🔁 **Song radio that never repeats, and never changes language** — play
+  *Arikil Pathiye* and the queue continues in that lane (*Thoominnal* next).
+  The next track is ranked by **language → composer → artist → era**, so a
+  Malayalam station stays Malayalam instead of drifting into Telugu. The
+  queue refills itself when it runs low, and nothing you have heard this
+  session comes back — matched on both track id *and* normalised
+  title+artist, so a "Remastered" duplicate or a re-upload can't sneak in
+  (`worker/src/radio.ts`, `web/src/player/queue.ts`).
+- 🌐 **Pick your languages on first run** — the home feed is scoped to them
+  from the very first request. Search is deliberately *not* scoped: if you
+  look something up, you get it regardless of your settings.
+- 👍 **Likes and dislikes that actually stick** — the profile lives in a
+  first-party cookie (`muzii_taste`) and is sent with every radio request.
+  A liked song pulls its artist and composer up the station; a disliked song
+  is dropped from the feed immediately, skipped if it is playing, and never
+  queued again. Dislike three songs by one singer and that singer stops
+  appearing. Changeable any time from Library → Taste.
 - 🎉 **Muzii Jam** — the Spotify-Jam equivalent. Host a room, share the
   5-character code or link, and everyone adds to one queue while every device
   plays the same track at the same time. Guests can skip, chat, and (if the
@@ -70,6 +82,10 @@ were a Next.js content site with no media proxying.)
   safe-area insets keep controls clear of the notch. Android resizes its
   artwork and cards the same way and survives rotation without restarting
   playback.
+- 📜 **The whole queue is reachable** — Up Next lives in a flex column with a
+  single scroll body (`min-height: 0`), so a 25-song radio can be scrolled to
+  the end instead of being clipped. Android gets the same list as a
+  virtualised `LazyColumn` that opens scrolled to the current song.
 
 - 🎵 **Streaming** — catalog, search, playlists, and a range-aware streaming
   proxy with edge caching (`worker/src/stream.ts`).
@@ -155,10 +171,17 @@ the Worker same-origin.
 Every push to `mnbots` builds APKs in GitHub Actions
 (`.github/workflows/build-apk.yml`):
 
-1. Open the **Actions** tab → latest **Build & Release APK** run →
-   **Artifacts** → download `muzii-release-apk` (or `muzii-debug-apk`).
-2. Or tag a release (`git tag v1.0.0 && git push origin v1.0.0`) — the APK is
-   attached to the **GitHub Release** for one-click download.
+**Install `muzii.apk` — there is only one file.** (Earlier builds published
+both `app-debug.apk` and `app-release.apk`, which made it impossible to tell
+which to install; only the release build is published now.)
+
+1. Open the **Releases** page and download **`muzii.apk`** from the latest
+   release — one tap on your phone.
+2. Or from the **Actions** tab → latest **Build & Release APK** run →
+   **Artifacts** → `muzii-apk`.
+
+Tagging (`git tag v1.0.0 && git push origin v1.0.0`) is what publishes a
+Release; a plain push to `mnbots` only builds the artifact.
 
 ## Project layout
 

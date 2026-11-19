@@ -74,22 +74,57 @@ object PlayerManager {
     private val playedIds = linkedSetOf<String>()
     private val playedKeys = linkedSetOf<String>()
 
+    /**
+     * True once a MediaController is connected. The UI uses this to explain
+     * why nothing plays instead of silently doing nothing.
+     */
+    private val _ready = MutableStateFlow(false)
+    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
     fun init(context: Context) {
         if (controllerFuture != null) return
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(context, token).buildAsync()
         controllerFuture!!.addListener(
             {
-                controller = controllerFuture!!.get()
-                controller?.addListener(Listener)
-                // Play anything the user queued before connecting.
-                pendingQueue?.let { tracks ->
-                    controller?.let { startPlayback(it, tracks, pendingIndex) }
-                    pendingQueue = null
-                }
+                // get() throws if the service could not be bound (e.g. the
+                // media session was destroyed while the app was in the
+                // background, or playback was stopped by the system). That
+                // exception is delivered on the main thread and would take
+                // the whole app down, so it must be caught here and the
+                // resource torn down for a later retry.
+                runCatching { controllerFuture?.get() }
+                    .onSuccess { connected ->
+                        controller = connected
+                        connected?.addListener(Listener)
+                        _ready.value = true
+                        // Play anything the user queued before connecting.
+                        val tracks = pendingQueue
+                        if (tracks != null) {
+                            runCatching { startPlayback(connected, tracks, pendingIndex) }
+                            pendingQueue = null
+                        }
+                    }
+                    .onFailure {
+                        controllerFuture?.let { future ->
+                            runCatching { MediaController.releaseFuture(future) }
+                        }
+                        controllerFuture = null
+                        controller = null
+                        _ready.value = false
+                    }
             },
             ContextCompat.getMainExecutor(context),
         )
+    }
+
+    /**
+     * Reconnect after the session died. Safe to call repeatedly; the UI calls
+     * it when the user taps play and nothing is connected.
+     */
+    fun reconnect(context: Context) {
+        if (controller != null) return
+        context.applicationContext?.let(::init)
     }
 
     private val Listener = object : Player.Listener {
@@ -221,8 +256,15 @@ object PlayerManager {
     }
 
     fun toggle() {
-        val c = controller ?: return
+        val c = controller
+        if (c == null) {
+            // Session not connected (yet, or it was killed). Surface it so
+            // the UI can retry instead of appearing dead.
+            _error.value = "Player reconnecting…"
+            return
+        }
         runCatching { if (c.isPlaying) c.pause() else c.play() }
+            .onFailure { _error.value = "Playback is not available right now" }
     }
 
     fun next() {
@@ -241,6 +283,30 @@ object PlayerManager {
 
     fun seekTo(positionMs: Long) {
         runCatching { controller?.seekTo(positionMs) }
+    }
+
+    /**
+     * Remove disliked songs from the pending part of the queue.
+     *
+     * The current item is never touched here — skipping away from a song you
+     * just disliked is the ViewModel's job, because it has to happen after
+     * the taste store has been updated.
+     */
+    fun dropDisliked(disliked: List<String>) {
+        if (disliked.isEmpty()) return
+        val blocked = disliked.toSet()
+        val c = controller ?: return
+        runCatching {
+            for (i in c.mediaItemCount - 1 downTo 0) {
+                if (i == c.currentMediaItemIndex) continue
+                if (blocked.contains(c.getMediaItemAt(i).mediaId)) {
+                    c.removeMediaItem(i)
+                }
+            }
+        }
+        _queue.value = _queue.value.filterIndexed { index, track ->
+            index == _currentIndex.value || track.id !in blocked
+        }
     }
 
     /** Call from a ticker (e.g. LaunchedEffect) to keep progress fresh. */
