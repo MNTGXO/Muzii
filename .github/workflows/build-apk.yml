@@ -4,6 +4,11 @@ on:
   push:
     branches: [mnbots]
     tags: ['v*']
+  # Compile every pull request that touches Android or this workflow. Without
+  # this, a Kotlin error could only be discovered AFTER merging to mnbots —
+  # the build simply never ran on a branch, so the PR looked green.
+  pull_request:
+    paths: ['android/**', '.github/workflows/build-apk.yml']
   workflow_dispatch:
 
 permissions:
@@ -156,7 +161,7 @@ jobs:
       # When the build breaks, post the compiler errors as a comment so they
       # are readable without digging through the Actions UI.
       - name: Report build failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
