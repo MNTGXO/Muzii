@@ -159,6 +159,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [extending, setExtending] = useState(false);
 
   const historyRef = useRef<TrackHistory>(loadHistory());
+  /**
+   * Songs the listener explicitly removed or disliked from the queue.
+   * Without this, removing a row was undone seconds later by the radio
+   * top-up, which happily fetched the same song again — it looked like the
+   * remove button simply didn't work.
+   */
+  const removedRef = useRef<Set<string>>(new Set());
   const catalogRef = useRef<Track[]>([]);
   /**
    * Taste snapshot used when asking for radio. Kept in a ref (not state) so
@@ -210,9 +217,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // below reads the whole catalog - without this the offline path can
       // drop a Telugu song into a Malayalam station.
       const seedLanguage = fromTrack.language ?? taste?.lang?.[0];
+      const removed = removedRef.current;
       const usable = (tracks: Track[]) =>
         sameLanguage(
-          tracks.filter((t) => !dislikedIds.has(t.id)),
+          tracks.filter(
+            (t) => !dislikedIds.has(t.id) && !removed.has(trackKey(t)),
+          ),
           seedLanguage,
         );
 
@@ -478,6 +488,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // his feed" means in practice).
   useEffect(() => {
     if (!disliked.length || !current) return;
+    // Dislikes are permanent too — they must not reappear via the radio.
+    for (const track of queue) {
+      if (disliked.includes(track.id)) removedRef.current.add(trackKey(track));
+    }
     if (!disliked.includes(current.id)) {
       // Also evict disliked songs sitting further down the queue.
       setQueue((prev) => {
@@ -557,10 +571,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   /**
    * Collapse versions of the same recording in a list the listener picked.
    *
-   * Search results and playlists are full of them ("Innale (K.J.Yesudas)
-   * (from "Balettan")" vs "Innale (Chithra) (from "Balettan")"), and putting
-   * the raw rows in the queue is what made it look like the app kept
-   * replaying one song. The clicked track always survives.
+   * Catalogs are full of them — "Minnum Minnamai", "Minnum Minnamai (Male)",
+   * "Minnum Minnamai (Female)" — and putting the raw rows in the queue is what
+   * made it look like the app kept replaying one song. The clicked track
+   * always survives.
    */
   const dedupeContext = useCallback((tracks: Track[], keepId?: string): Track[] => {
     const seen = new Set<string>();
@@ -574,6 +588,42 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     return out;
   }, []);
+
+  /**
+   * The queue itself is never allowed to hold two versions of one song.
+   *
+   * dedupeContext() only sanitises what we were handed; the queue can still
+   * accumulate duplicates via appendToQueue/enqueue and via state persisted
+   * by an older build. This effect is the backstop, and it keeps the current
+   * track's position valid when rows disappear. (The visible bug: 12 "Next
+   * up" rows where 4 were the same song.)
+   */
+  useEffect(() => {
+    if (queue.length < 2) return;
+    const seen = new Set<string>();
+    const kept: Track[] = [];
+    // Index of the *currently playing* track once duplicates are gone.
+    let anchor = -1;
+    const currentId = queue[index]?.id;
+
+    queue.forEach((track, i) => {
+      const key = trackKey(track);
+      if (seen.has(key)) return;
+      seen.add(key);
+      kept.push(track);
+      if (i === index) anchor = kept.length - 1;
+    });
+
+    if (kept.length === queue.length) return;
+    setQueue(kept);
+    // If the playing row was itself the duplicate that got dropped, stay on
+    // the surviving version of the same song rather than jumping elsewhere.
+    const nextIndex = anchor >= 0
+      ? anchor
+      : Math.max(0, kept.findIndex((t) => t.id === currentId));
+    setIndex(Math.min(nextIndex, kept.length - 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue.length, index]);
 
   const playQueue = useCallback(
     (tracks: Track[], startIndex = 0, source: QueueSource = 'manual') => {
@@ -633,6 +683,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const removeAt = useCallback((at: number) => {
     setQueue((prev) => {
       if (at < 0 || at >= prev.length) return prev;
+      // Remember it so the radio can't immediately serve it up again.
+      removedRef.current.add(trackKey(prev[at]));
       const { index: i } = stateRef.current;
       const nextQueue = prev.filter((_, idx) => idx !== at);
       if (at < i) setIndex(i - 1);
