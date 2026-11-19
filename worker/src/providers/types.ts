@@ -1,0 +1,18 @@
+import type { Playlist, Track } from '../types';
+
+/**
+ * Music provider abstraction.
+ *
+ * The built-in DemoProvider serves royalty-free sample streams so the app
+ * works out of the box. To ship a real product, implement this interface
+ * against a licensed catalog (e.g. JioSaavn, YouTube Music, SoundCloud,
+ * or your own label deals) and set PROVIDER in wrangler.toml.
+ */
+export interface MusicProvider {
+  readonly name: string;
+  getCatalog(): Promise<Track[]>;
+  search(query: string): Promise<Track[]>;
+  getTrack(id: string): Promise<Track | null>;
+  getPlaylists(): Promise<Playlist[]>;
+  getLyrics(trackId: string): Promise<string[]>;
+}

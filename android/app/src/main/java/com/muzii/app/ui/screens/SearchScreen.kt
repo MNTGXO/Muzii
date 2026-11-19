@@ -1,0 +1,73 @@
+package com.muzii.app.ui.screens
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.muzii.app.data.model.Track
+import com.muzii.app.ui.components.TrackRow
+import com.muzii.app.ui.theme.TextSecondary
+
+@Composable
+fun SearchScreen(
+    query: String,
+    results: List<Track>,
+    currentTrackId: String?,
+    isPlaying: Boolean,
+    onQueryChange: (String) -> Unit,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            "Search",
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.White,
+            modifier = Modifier.padding(16.dp),
+        )
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = { Text("Songs, artists, albums…", color = TextSecondary) },
+            leadingIcon = {
+                Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary)
+            },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+            ),
+        )
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(results) { index, track ->
+                TrackRow(
+                    track = track,
+                    index = index,
+                    isActive = track.id == currentTrackId,
+                    isPlaying = isPlaying,
+                ) {
+                    onPlayTrack(track, results)
+                }
+            }
+            item { Spacer(Modifier.height(120.dp)) }
+        }
+    }
+}
