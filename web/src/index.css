@@ -402,6 +402,10 @@ input[type='range']::-moz-range-thumb {
   .main { padding: 20px 16px 24px; }
   .player-bar { grid-column: 1; grid-template-columns: 1fr auto; }
   .pb-progress, .pb-right { display: none; }
+  /* Keep the mini bar uncluttered on phones — shuffle/repeat live in Now Playing. */
+  .pb-controls button:first-child,
+  .pb-controls button:last-child { display: none; }
+  .pb-controls { gap: 14px; }
   .mobile-nav {
     display: flex;
     background: rgba(20, 20, 22, 0.92);

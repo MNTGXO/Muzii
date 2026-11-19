@@ -10,6 +10,8 @@ jobs:
   deploy-worker:
     name: Deploy Worker
     runs-on: ubuntu-latest
+    outputs:
+      worker_url: ${{ steps.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,11 +21,20 @@ jobs:
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
         working-directory: worker
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: worker
+      # Deploy and capture the workers.dev URL so the web build can be
+      # wired to the real Worker (no manual WORKER_URL variable needed).
+      - id: deploy
+        name: Deploy Worker
+        run: |
+          set -eo pipefail
+          npx wrangler deploy 2>&1 | tee /tmp/deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' /tmp/deploy.log | head -1 || true)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Worker URL: $URL"
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-web:
     name: Deploy Web (Pages)
