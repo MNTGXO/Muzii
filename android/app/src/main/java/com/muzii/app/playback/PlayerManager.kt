@@ -281,6 +281,25 @@ object PlayerManager {
         }
     }
 
+    /**
+     * Jump to a specific position in the queue (used by the Up Next list).
+     * Clamped, because the queue can shrink while the list is on screen.
+     */
+    fun jumpTo(index: Int) {
+        val c = controller
+        val size = if (c != null) c.mediaItemCount else _queue.value.size
+        if (size <= 0) return
+        val safe = index.coerceIn(0, size - 1)
+        _currentIndex.value = safe
+        runCatching {
+            c?.let {
+                it.seekTo(safe, 0L)
+                it.prepare()
+                it.play()
+            }
+        }
+    }
+
     fun seekTo(positionMs: Long) {
         runCatching { controller?.seekTo(positionMs) }
     }
