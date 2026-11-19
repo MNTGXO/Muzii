@@ -27,6 +27,16 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # AGP 8.5.2 + Kotlin 2.0.20 require Gradle 8.7. With no wrapper jar in
+      # the repo, setup-gradle installs the latest Gradle (9.x), which is
+      # incompatible — pin Gradle 8.7 explicitly.
+      - name: Pin Gradle 8.7
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle-8.7.zip
+          unzip -q /tmp/gradle-8.7.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.7/bin" >> "$GITHUB_PATH"
+          gradle --version
+
       - name: Build debug APK
         working-directory: android
         run: gradle assembleDebug --stacktrace
