@@ -92,6 +92,22 @@ jobs:
           set -o pipefail
           gradle assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
 
+      # Make compiler errors readable without the log viewer.
+      #
+      # Action logs are a redirect to a short-lived signed URL, which is
+      # unreachable from a restricted network or a phone — and offline it is
+      # impossible to tell a Kotlin error from a signing failure. Each `e:`
+      # line becomes a check annotation, which the API serves directly.
+      - name: Surface Kotlin compile errors
+        if: failure()
+        run: |
+          if [ ! -f /tmp/build.log ]; then exit 0; fi
+          grep -E "^e: |^w: .*unused|error:" /tmp/build.log | head -12 | while IFS= read -r line; do
+            echo "::error title=Kotlin::$line"
+          done
+          echo "----- kotlin errors -----"
+          grep -E "^e: " /tmp/build.log | head -25 || echo "(no e: lines found)"
+
       # Rename before uploading so the downloaded file is obviously *the*
       # app, not `app-release.apk`.
       - name: Rename APK
