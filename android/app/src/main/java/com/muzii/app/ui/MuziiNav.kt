@@ -197,6 +197,14 @@ fun MuziiNav(
                     dislikedIds = dislikedIds,
                     onToggleLike = onToggleLike,
                     onToggleDislike = onToggleDislike,
+                    onShufflePlay = {
+                        // Start at a random track and turn shuffle on, which is
+                        // what "shuffle play" means on every music app.
+                        if (playlistTracks.isNotEmpty()) {
+                            PlayerManager.playQueue(playlistTracks, kotlin.random.Random.nextInt(playlistTracks.size))
+                            if (!shuffle) PlayerManager.toggleShuffle()
+                        }
+                    },
                 )
             } else {
                 when (tab) {
