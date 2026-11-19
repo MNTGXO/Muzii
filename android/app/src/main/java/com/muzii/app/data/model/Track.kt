@@ -19,5 +19,12 @@ data class Playlist(
     val title: String,
     val description: String,
     val trackIds: List<String>,
+    /**
+     * Full track objects when the API provides them. YouTube Music playlist
+     * ids come from separate searches and are NOT in the catalog, so
+     * resolving playlist tracks by filtering the catalog renders empty —
+     * always prefer this list.
+     */
+    val tracks: List<Track>? = null,
     val gradient: String,
 )

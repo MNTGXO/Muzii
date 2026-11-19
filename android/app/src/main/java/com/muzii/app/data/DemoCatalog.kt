@@ -76,5 +76,9 @@ object DemoCatalog {
             trackIds = listOf("sh-14", "sh-15", "sh-16"),
             gradient = "linear-gradient(135deg,#64D2FF,#30D158)",
         ),
-    )
+    ).map { pl ->
+        // Embed full tracks so playlists render without catalog filtering
+        // (mirrors the Worker's response shape).
+        pl.copy(tracks = pl.trackIds.mapNotNull { id -> TRACKS.find { it.id == id } })
+    }
 }

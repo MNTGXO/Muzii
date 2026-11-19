@@ -6,13 +6,28 @@ import { fetchWithAdBlock } from '../adblock/blocker';
  * API client for the Muzii Cloudflare Worker.
  * Falls back to the bundled demo catalog when the Worker is unreachable
  * (e.g. local preview without `wrangler dev`), so the app always works.
+ *
+ * API_BASE is empty in production: requests go to same-origin `/api/*`,
+ * which Cloudflare Pages proxies to the Worker via `_redirects`
+ * (generated at deploy time). VITE_API_BASE_URL can override with an
+ * absolute Worker URL.
  */
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
 
+const REQUEST_TIMEOUT_MS = 12_000;
+
 async function apiFetch<T>(path: string): Promise<T> {
-  const res = await fetchWithAdBlock(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-  return (await res.json()) as T;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetchWithAdBlock(`${API_BASE}${path}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function getCatalog(): Promise<Track[]> {
@@ -24,10 +39,12 @@ export async function getCatalog(): Promise<Track[]> {
 }
 
 export async function searchTracks(q: string): Promise<Track[]> {
+  const query = q.trim();
+  if (!query) return [];
   try {
-    return await apiFetch<Track[]>(`/api/search?q=${encodeURIComponent(q)}`);
+    return await apiFetch<Track[]>(`/api/search?q=${encodeURIComponent(query)}`);
   } catch {
-    const s = q.toLowerCase();
+    const s = query.toLowerCase();
     return DEMO_TRACKS.filter((t) =>
       [t.title, t.artist, t.album].join(' ').toLowerCase().includes(s),
     );
@@ -42,7 +59,21 @@ export async function getPlaylists(): Promise<Playlist[]> {
   }
 }
 
-/** Stream URL — proxied through the Worker (range + cache + ad-block) when available. */
+/** Fetch a single track by id (used to resolve playlist tracks). */
+export async function getTrack(id: string): Promise<Track | null> {
+  try {
+    return await apiFetch<Track>(`/api/track/${encodeURIComponent(id)}`);
+  } catch {
+    return DEMO_TRACKS.find((t) => t.id === id) ?? null;
+  }
+}
+
+/**
+ * Stream URL — always proxied through the Worker (range + cache + ad-block).
+ * YouTube tracks have no usable direct URL (`ytmusic://…` is a marker), so
+ * the proxy is the only playable path. If the proxy fails, PlayerContext
+ * retries with the track's direct URL (works for demo tracks).
+ */
 export function streamUrl(track: Track): string {
-  return API_BASE ? `${API_BASE}/api/stream/${track.id}` : track.streamUrl;
+  return `${API_BASE}/api/stream/${track.id}`;
 }

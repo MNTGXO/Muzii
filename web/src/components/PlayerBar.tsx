@@ -1,7 +1,9 @@
 import type { CSSProperties } from 'react';
 import {
+  AlertTriangle,
   ChevronUp,
   ListMusic,
+  Loader2,
   Pause,
   Play,
   Repeat,
@@ -29,11 +31,19 @@ export function PlayerBar({
 
   return (
     <div className="player-bar">
-      <button className="pb-track" onClick={onExpand}>
+      <button className="pb-track" onClick={onExpand} aria-label="Open now playing">
         <Artwork track={p.current} size={48} radius={10} />
         <span className="pb-meta">
           <span className="pb-title">{p.current.title}</span>
-          <span className="pb-artist">{p.current.artist}</span>
+          <span className="pb-artist">
+            {p.error ? (
+              <span className="pb-error">
+                <AlertTriangle size={12} /> Playback failed — tap to retry
+              </span>
+            ) : (
+              p.current.artist
+            )}
+          </span>
         </span>
         <ChevronUp size={18} className="pb-expand-icon" />
       </button>
@@ -49,8 +59,18 @@ export function PlayerBar({
         <button onClick={p.prev} aria-label="Previous">
           <SkipBack size={20} />
         </button>
-        <button className="pb-play" onClick={p.toggle} aria-label="Play/Pause">
-          {p.isPlaying ? <Pause size={22} /> : <Play size={22} />}
+        <button
+          className="pb-play"
+          onClick={p.error ? p.retry : p.toggle}
+          aria-label={p.error ? 'Retry' : 'Play/Pause'}
+        >
+          {p.buffering ? (
+            <Loader2 size={22} className="spin" />
+          ) : p.isPlaying ? (
+            <Pause size={22} />
+          ) : (
+            <Play size={22} />
+          )}
         </button>
         <button onClick={p.next} aria-label="Next">
           <SkipForward size={20} />
@@ -70,7 +90,7 @@ export function PlayerBar({
           type="range"
           min={0}
           max={p.duration || 0}
-          value={p.progress}
+          value={Math.min(p.progress, p.duration || 0)}
           onChange={(e) => p.seek(Number(e.target.value))}
           style={{ '--fill': `${pct}%` } as CSSProperties}
           aria-label="Seek"
@@ -88,6 +108,7 @@ export function PlayerBar({
           value={p.volume}
           onChange={(e) => p.setVolume(Number(e.target.value))}
           className="vol"
+          style={{ '--fill': `${p.volume * 100}%` } as CSSProperties}
           aria-label="Volume"
         />
         <button onClick={onToggleQueue} aria-label="Queue">

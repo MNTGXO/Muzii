@@ -15,6 +15,13 @@ export interface Playlist {
   title: string;
   description: string;
   trackIds: string[];
+  /**
+   * Full track objects for this playlist. Included so clients can render
+   * the playlist without a second round-trip (playlist track ids come
+   * from provider-side searches and are not guaranteed to be in the
+   * catalog). Optional for backwards compatibility.
+   */
+  tracks?: Track[];
   /** CSS gradient used for the playlist artwork. */
   gradient: string;
 }

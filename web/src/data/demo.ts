@@ -73,3 +73,11 @@ export const DEMO_PLAYLISTS: Playlist[] = [
     gradient: 'linear-gradient(135deg,#64D2FF,#30D158)',
   },
 ];
+
+// Attach full track objects (mirrors the Worker) so playlists render
+// without having to look tracks up in the catalog.
+for (const pl of DEMO_PLAYLISTS) {
+  pl.tracks = pl.trackIds
+    .map((id) => DEMO_TRACKS.find((t) => t.id === id))
+    .filter((t): t is Track => t !== undefined);
+}

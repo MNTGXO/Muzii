@@ -1,22 +1,73 @@
-/* Muzii service worker — app-shell cache + network-first for API. */
-const CACHE = 'muzii-v1';
+/*
+ * Muzii service worker.
+ *
+ * Strategy:
+ * - API (/api/*): never cached, straight to network (the Worker/Pages proxy
+ *   handles its own edge caching).
+ * - Navigations + same-origin static assets: NETWORK-FIRST with cache
+ *   fallback. Cache-first was serving users a stale JS bundle after every
+ *   deploy; network-first means a fresh deploy is picked up immediately and
+ *   the cache is only an offline safety net.
+ * - Old caches are purged on activate.
+ */
+const CACHE = 'muzii-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()),
+    caches
+      .open(CACHE)
+      .then((c) => c.addAll(SHELL))
+      .catch(() => undefined)
+      .then(() => self.skipWaiting()),
   );
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
+  const { request } = e;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+  // Same-origin only — never intercept cross-origin media (audio ranges,
+  // cover art CDNs) since streaming needs direct, unmodified requests.
+  if (url.origin !== self.location.origin) return;
+
   if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+    e.respondWith(fetch(request));
     return;
   }
-  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
+
+  e.respondWith(
+    fetch(request)
+      .then((res) => {
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => undefined);
+        }
+        return res;
+      })
+      .catch(async () => {
+        const hit = await caches.match(request);
+        if (hit) return hit;
+        // Offline navigation fallback to the app shell.
+        if (request.mode === 'navigate') {
+          const shell = await caches.match('/index.html');
+          if (shell) return shell;
+        }
+        return new Response('Offline', { status: 503, statusText: 'Offline' });
+      }),
+  );
 });

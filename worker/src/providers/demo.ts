@@ -75,6 +75,13 @@ export const DEMO_PLAYLISTS: Playlist[] = [
   },
 ];
 
+// Attach full track objects so clients can render playlists directly.
+for (const pl of DEMO_PLAYLISTS) {
+  pl.tracks = pl.trackIds
+    .map((id) => DEMO_TRACKS.find((t) => t.id === id))
+    .filter((t): t is Track => t !== undefined);
+}
+
 export class DemoProvider implements MusicProvider {
   readonly name = 'demo';
 

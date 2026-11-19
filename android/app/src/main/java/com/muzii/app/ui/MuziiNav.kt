@@ -110,7 +110,11 @@ fun MuziiNav(
         Box(Modifier.padding(padding)) {
             val playlist = openPlaylist
             if (playlist != null) {
-                val playlistTracks = tracks.filter { playlist.trackIds.contains(it.id) }
+                // Prefer the playlist's embedded tracks: YouTube playlist
+                // ids come from separate searches and are not in the
+                // catalog, so filtering rendered empty playlists.
+                val playlistTracks = playlist.tracks?.takeIf { it.isNotEmpty() }
+                    ?: playlist.trackIds.mapNotNull { id -> tracks.find { it.id == id } }
                 PlaylistScreen(
                     playlist = playlist,
                     tracks = playlistTracks,

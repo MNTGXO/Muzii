@@ -47,10 +47,21 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # Write a same-origin /api proxy so the web app works even if the
+      # build-time VITE_API_BASE_URL is missing (belt + braces).
+      - name: Write Pages API proxy
+        run: |
+          WORKER_URL="${{ needs.deploy-worker.outputs.worker_url }}"
+          if [ -n "$WORKER_URL" ]; then
+            echo "/api/* $WORKER_URL/api/:splat 200" > web/public/_redirects
+            echo "Wrote _redirects proxy -> $WORKER_URL"
+          else
+            echo "::warning::No Worker URL captured — web will rely on VITE_API_BASE_URL"
+          fi
       - run: npm ci && npm run build
         working-directory: web
         env:
-          VITE_API_BASE_URL: ${{ vars.WORKER_URL }}
+          VITE_API_BASE_URL: ${{ needs.deploy-worker.outputs.worker_url || vars.WORKER_URL }}
       # `pages deploy` fails with "Project not found" on first run if the
       # Pages project doesn't exist yet. Create it; if creation reports
       # the project already exists, verify via list and continue. Any
