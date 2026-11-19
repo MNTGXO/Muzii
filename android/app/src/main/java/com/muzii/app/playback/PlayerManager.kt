@@ -148,10 +148,12 @@ object PlayerManager {
             pendingQueue = _queue.value
             return
         }
-        c.addMediaItems(fresh.map { toMediaItem(it) })
-        if (c.playbackState == Player.STATE_ENDED || c.playbackState == Player.STATE_IDLE) {
-            c.prepare()
-            c.play()
+        runCatching {
+            c.addMediaItems(fresh.map { toMediaItem(it) })
+            if (c.playbackState == Player.STATE_ENDED || c.playbackState == Player.STATE_IDLE) {
+                c.prepare()
+                c.play()
+            }
         }
     }
 
@@ -170,7 +172,9 @@ object PlayerManager {
             pendingIndex = startIndex
             return
         }
-        startPlayback(c, tracks, startIndex)
+        // The session can die while the app is backgrounded; a dead controller
+        // must not crash the UI thread.
+        runCatching { startPlayback(c, tracks, startIndex) }
     }
 
     /** Start a song radio: the seed plays, then the app fills the rest. */
@@ -218,26 +222,32 @@ object PlayerManager {
 
     fun toggle() {
         val c = controller ?: return
-        if (c.isPlaying) c.pause() else c.play()
+        runCatching { if (c.isPlaying) c.pause() else c.play() }
     }
 
     fun next() {
         val c = controller ?: return
-        if (c.hasNextMediaItem()) c.seekToNextMediaItem() else maybeExtend()
+        runCatching {
+            if (c.hasNextMediaItem()) c.seekToNextMediaItem() else maybeExtend()
+        }
     }
 
     fun prev() {
         val c = controller ?: return
-        if (c.currentPosition > 3000) c.seekTo(0) else c.seekToPreviousMediaItem()
+        runCatching {
+            if (c.currentPosition > 3000) c.seekTo(0) else c.seekToPreviousMediaItem()
+        }
     }
 
     fun seekTo(positionMs: Long) {
-        controller?.seekTo(positionMs)
+        runCatching { controller?.seekTo(positionMs) }
     }
 
     /** Call from a ticker (e.g. LaunchedEffect) to keep progress fresh. */
     fun tick() {
-        _positionMs.value = controller?.currentPosition ?: 0L
-        _durationMs.value = controller?.duration?.takeIf { it > 0 } ?: _durationMs.value
+        runCatching {
+            _positionMs.value = controller?.currentPosition ?: 0L
+            _durationMs.value = controller?.duration?.takeIf { it > 0 } ?: _durationMs.value
+        }
     }
 }
