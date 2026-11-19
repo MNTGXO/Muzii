@@ -95,15 +95,57 @@ export function JamPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.positionMs, current?.id]);
 
-  // Host reports its own progress so guests can follow.
+  /**
+   * Host: keep the ROOM equal to the player.
+   *
+   * This used to report only `positionMs` every 8 seconds. Nothing ever told
+   * the room which song was playing or that the queue had changed, so a host
+   * with music playing still showed "Queue 0" and guests had nothing to
+   * follow - they only ever saw tracks someone had manually added with
+   * "Add from your library".
+   *
+   * Now the host mirrors the live queue and index into the room whenever
+   * they change, and reports the playhead alongside. `jam.sync()` is one
+   * round-trip for both.
+   */
+  const lastSyncRef = useRef({ signature: '', at: 0 });
   useEffect(() => {
     if (!isHost || !state) return;
-    const id = setInterval(() => {
-      if (current) void jam.seek(Math.round(player.progress * 1000));
-    }, 8000);
+
+    const push = (force: boolean) => {
+      const q = player.queue;
+      if (!q.length) return;
+      // Signature covers queue identity + order + position in it, so an
+      // unchanged queue does not spam the room.
+      const signature = `${q.map((t) => t.id).join(',')}|${player.index}`;
+      const changed = signature !== lastSyncRef.current.signature;
+      const stale = Date.now() - lastSyncRef.current.at > 8000;
+      if (!force && !changed && !stale) return;
+      lastSyncRef.current = { signature, at: Date.now() };
+      void jam.sync(
+        q,
+        player.index,
+        Math.round(player.progress * 1000),
+        player.isPlaying,
+      );
+    };
+
+    // Immediately on becoming host, then on every meaningful change.
+    push(true);
+
+    // A slow heartbeat keeps late joiners in sync even when nothing changed
+    // (a paused host drifts, a seek happens, a poll is missed).
+    const id = setInterval(() => push(false), 8000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost, current?.id, player.progress > 0]);
+  }, [
+    isHost,
+    state?.code,
+    player.queue.map((t) => t.id).join(','),
+    player.index,
+    current?.id,
+    player.isPlaying,
+  ]);
 
   const shareUrl = useMemo(
     () => (state ? `${location.origin}${location.pathname}#/jam/${state.code}` : ''),

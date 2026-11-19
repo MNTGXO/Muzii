@@ -1808,3 +1808,114 @@ input[type='range']::-moz-range-thumb {
   .onboarding-sub { margin-bottom: 18px; }
   .onboarding-badge { margin-bottom: 12px; }
 }
+
+/* ---------- Install banner ---------- */
+.install-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(250, 45, 72, 0.16), rgba(120, 60, 200, 0.14));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: slide-down 0.45s var(--ease) both;
+}
+.install-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.install-text strong { font-size: 14px; }
+.install-text span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+.install-action { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; }
+.install-dismiss {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border-radius: 999px;
+  color: var(--text-2);
+}
+.install-dismiss:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+@media (max-width: 430px) {
+  .install-text span { display: none; }
+}
+
+/* ---------- Motion ---------- */
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Shelves rise in one after another rather than all at once. Page content
+   uses --i where available; this is the generic stagger. */
+@keyframes rise-in {
+  from { transform: translateY(10px); }
+  to { transform: translateY(0); }
+}
+/*
+ * Transform-only stagger, deliberately WITHOUT an opacity fade.
+ *
+ * Animating from `opacity: 0` with fill-mode `both` means the element is
+ * invisible until its delayed animation starts - so if animations are
+ * blocked, the tab is backgrounded mid-paint, or a browser skips the
+ * animation, a whole shelf stays invisible. That failure looks exactly like
+ * a heading with nothing under it, which is a bug report I could not
+ * otherwise reproduce. Motion is nice; content that can disappear is not.
+ */
+.page > section {
+  animation: rise-in 0.4s var(--ease) both;
+}
+.page > section:nth-of-type(1) { animation-delay: 0.02s; }
+.page > section:nth-of-type(2) { animation-delay: 0.06s; }
+.page > section:nth-of-type(3) { animation-delay: 0.1s; }
+.page > section:nth-of-type(4) { animation-delay: 0.14s; }
+.page > section:nth-of-type(5) { animation-delay: 0.18s; }
+.page > section:nth-of-type(n + 6) { animation-delay: 0.22s; }
+
+/* Artwork cross-fade on track change, and spring-y press feedback on the
+   interactive cards. Kept subtle on purpose — the Apple-Music look comes from
+   restraint, not from things bouncing around. */
+.artwork,
+.artwork-img { transition: opacity 0.28s ease, transform 0.4s var(--ease); }
+
+.quick-card,
+.album-card,
+.track-row {
+  transition: transform 0.18s var(--ease), background 0.18s ease, border-color 0.18s ease;
+}
+.quick-card:active,
+.album-card:active,
+.repeat-banner:active { transform: scale(0.975); }
+.track-row:active { background: rgba(255, 255, 255, 0.07); }
+
+/* Skeleton shimmer while a shelf loads — previously an empty region that was
+   indistinguishable from a broken one. */
+@keyframes shimmer-sweep {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton-row {
+  animation: shimmer-sweep 1.4s linear infinite !important;
+}
+
+/* Respect the OS setting. Everything above is decorative. */
+@media (prefers-reduced-motion: reduce) {
+  .page > section,
+  .install-banner,
+  .np-timer,
+  .skeleton-row {
+    animation: none !important;
+  }
+  .quick-card:active,
+  .album-card:active,
+  .repeat-banner:active { transform: none; }
+}
+
+/* Empty states */
+.empty-state { padding: 8px 0 24px; }
+.empty-state .btn-primary { display: inline-flex; align-items: center; gap: 6px; }
