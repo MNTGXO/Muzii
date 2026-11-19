@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +44,8 @@ fun MiniPlayerBar(
     /** Heart on the mini bar too; no dislike here - see the comment below. */
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
+    /** True while the stream is buffering — otherwise it looks frozen. */
+    buffering: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -78,11 +82,21 @@ fun MiniPlayerBar(
                 Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = Color.White)
             }
             IconButton(onClick = onToggle) {
-                Icon(
-                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = "Play/Pause",
-                    tint = Color.White,
-                )
+                if (buffering) {
+                    // A still pause icon while audio is loading reads as a
+                    // stuck app; a spinner says "working on it".
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White,
+                    )
+                } else {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = "Play/Pause",
+                        tint = Color.White,
+                    )
+                }
             }
             IconButton(onClick = onNext) {
                 Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = Color.White)

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbDownOffAlt
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -94,6 +95,10 @@ fun NowPlayingScreen(
     /** Repeat cycle: off → all → one. */
     repeatMode: PlayerManager.RepeatMode = PlayerManager.RepeatMode.OFF,
     onCycleRepeat: () -> Unit = {},
+    /** True while the stream is buffering. */
+    buffering: Boolean = false,
+    /** A player error (usually "skipping a track that could not be played"). */
+    error: String? = null,
 ) {
     var timerOpen by remember { mutableStateOf(false) }
     // Apple Music rests the artwork slightly smaller while paused and lets it
@@ -276,12 +281,20 @@ fun NowPlayingScreen(
                     .clip(RoundedCornerShape(36.dp))
                     .background(Color.White),
             ) {
-                Icon(
-                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = "Play/Pause",
-                    tint = Color.Black,
-                    modifier = Modifier.size(40.dp),
-                )
+                if (buffering) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 3.dp,
+                        color = Color.Black,
+                    )
+                } else {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = "Play/Pause",
+                        tint = Color.Black,
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
             }
             IconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
                 Icon(
@@ -331,6 +344,19 @@ fun NowPlayingScreen(
                     modifier = Modifier.size(20.dp),
                 )
             }
+        }
+
+        // Player errors were collected by nothing, so a failing track was
+        // skipped in silence. Say so.
+        if (error != null && !buffering) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                error,
+                color = Color(0xFFFFD60A),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         if (timerOpen) {

@@ -92,6 +92,11 @@ fun MuziiNav(
     val sleepRemainingMs by PlayerManager.sleepRemainingMs.collectAsState()
     val sleepAtTrackEnd by PlayerManager.sleepAtTrackEnd.collectAsState()
     val shuffle by PlayerManager.shuffle.collectAsState()
+    // These two were never collected, so a player error or a long buffer was
+    // completely invisible: a track failed, the player silently skipped it,
+    // and the only clue was that the song changed by itself.
+    val buffering by PlayerManager.buffering.collectAsState()
+    val playerError by PlayerManager.error.collectAsState()
     val repeatMode by PlayerManager.repeatMode.collectAsState()
     val currentTrack = queue.getOrNull(currentIndex)
 
@@ -134,6 +139,7 @@ fun MuziiNav(
                     MiniPlayerBar(
                         track = track,
                         isPlaying = isPlaying,
+                        buffering = buffering,
                         onToggle = { PlayerManager.toggle() },
                         onNext = { PlayerManager.next() },
                         onPrev = { PlayerManager.prev() },
@@ -271,6 +277,8 @@ fun MuziiNav(
         NowPlayingScreen(
             track = currentTrack,
             isPlaying = isPlaying,
+            buffering = buffering,
+            error = playerError,
             positionMs = positionMs,
             durationMs = durationMs,
             onToggle = { PlayerManager.toggle() },
