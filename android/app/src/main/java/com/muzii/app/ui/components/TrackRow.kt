@@ -30,10 +30,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Track
 import com.muzii.app.ui.theme.ApplePink
+import com.muzii.app.ui.theme.gradientFor
 import com.muzii.app.ui.theme.TextSecondary
 
 @Composable
@@ -50,10 +55,24 @@ fun TrackRow(
     onToggleLike: (() -> Unit)? = null,
     onToggleDislike: (() -> Unit)? = null,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    // A playing row lifts very slightly and shows a tinted background, so the
+    // eye can find "the one that is playing" in a long list without reading.
+    val activeBg by animateColorAsState(
+        targetValue = if (isActive) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(180),
+        label = "rowActive",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressScale(interaction, pressed = 0.985f)
+            .background(activeBg)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -128,26 +147,23 @@ fun TrackRow(
 }
 
 @Composable
-fun ArtworkBox(track: Track, size: Dp) {
-    val hue = (track.gradientSeed % 360).toFloat()
+fun ArtworkBox(
+    track: Track,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 10.dp,
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        Color.hsv(hue, 0.8f, 0.95f),
-                        Color.hsv((hue + 60) % 360, 0.8f, 0.7f),
-                    ),
-                ),
-            ),
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(Brush.linearGradient(gradientFor(track.gradientSeed))),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             Icons.Filled.MusicNote,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.9f),
+            tint = Color.White.copy(alpha = 0.55f),
         )
     }
 }

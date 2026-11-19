@@ -1,5 +1,6 @@
 package com.muzii.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -17,7 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -33,6 +36,7 @@ import com.muzii.app.ui.screens.NowPlayingScreen
 import com.muzii.app.ui.screens.OnboardingScreen
 import com.muzii.app.ui.screens.QueueScreen
 import com.muzii.app.data.taste.PlayLog
+import com.muzii.app.data.taste.TasteStore
 import com.muzii.app.ui.screens.PlaylistScreen
 import com.muzii.app.ui.screens.SearchScreen
 import com.muzii.app.ui.theme.SurfaceDark
@@ -63,10 +67,22 @@ fun MuziiNav(
     offlineReason: String? = null,
     onRetry: () -> Unit = {},
 ) {
-    var tab by remember { mutableStateOf(Tab.HOME) }
-    var showNowPlaying by remember { mutableStateOf(false) }
-    var showQueue by remember { mutableStateOf(false) }
-    var openPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    /*
+     * rememberSaveable, not remember.
+     *
+     * Nothing in the app was saveable, so rotating the device or letting the
+     * process be reclaimed dropped you back on Home with the player shut —
+     * the music kept playing (it lives in a service) but the UI forgot where
+     * you were. Tab and overlay visibility survive now; the playlist is
+     * restored by id because Playlist is not Parcelable.
+     */
+    // Stored as an ordinal: rememberSaveable cannot serialise a custom enum.
+    var tabOrdinal by rememberSaveable { mutableIntStateOf(Tab.HOME.ordinal) }
+    val tab = Tab.entries[tabOrdinal.coerceIn(0, Tab.entries.lastIndex)]
+    var showNowPlaying by rememberSaveable { mutableStateOf(false) }
+    var showQueue by rememberSaveable { mutableStateOf(false) }
+    var openPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openPlaylist = openPlaylistId?.let { id -> playlists.find { it.id == id } }
 
     val queue by PlayerManager.queue.collectAsState()
     val currentIndex by PlayerManager.currentIndex.collectAsState()
@@ -75,6 +91,8 @@ fun MuziiNav(
     val durationMs by PlayerManager.durationMs.collectAsState()
     val sleepRemainingMs by PlayerManager.sleepRemainingMs.collectAsState()
     val sleepAtTrackEnd by PlayerManager.sleepAtTrackEnd.collectAsState()
+    val shuffle by PlayerManager.shuffle.collectAsState()
+    val repeatMode by PlayerManager.repeatMode.collectAsState()
     val currentTrack = queue.getOrNull(currentIndex)
 
     // Progress ticker while playing.
@@ -88,6 +106,18 @@ fun MuziiNav(
     val playTrack: (Track, List<Track>) -> Unit = { track, ctx ->
         PlayerManager.playQueue(ctx, ctx.indexOf(track))
     }
+
+    /*
+     * System Back.
+     *
+     * There was no BackHandler anywhere, so pressing back while the full
+     * player or Up Next was open closed the whole app — a jarring exit that
+     * lost the screen you were on. Peel overlays in the order they stack:
+     * now playing → queue → playlist → exit.
+     */
+    BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
+    BackHandler(enabled = showQueue) { showQueue = false }
+    BackHandler(enabled = openPlaylistId != null) { openPlaylistId = null }
 
     // First run: pick languages before the feed is built, so the home screen
     // is never populated with the wrong ones.
@@ -115,25 +145,25 @@ fun MuziiNav(
                 NavigationBar(containerColor = SurfaceDark) {
                     NavigationBarItem(
                         selected = tab == Tab.HOME,
-                        onClick = { tab = Tab.HOME },
+                        onClick = { tabOrdinal = Tab.HOME.ordinal },
                         icon = { Icon(Icons.Filled.Home, contentDescription = null) },
                         label = { Text(Tab.HOME.label) },
                     )
                     NavigationBarItem(
                         selected = tab == Tab.SEARCH,
-                        onClick = { tab = Tab.SEARCH },
+                        onClick = { tabOrdinal = Tab.SEARCH.ordinal },
                         icon = { Icon(Icons.Filled.Search, contentDescription = null) },
                         label = { Text(Tab.SEARCH.label) },
                     )
                     NavigationBarItem(
                         selected = tab == Tab.LIBRARY,
-                        onClick = { tab = Tab.LIBRARY },
+                        onClick = { tabOrdinal = Tab.LIBRARY.ordinal },
                         icon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
                         label = { Text(Tab.LIBRARY.label) },
                     )
                     NavigationBarItem(
                         selected = tab == Tab.JAM,
-                        onClick = { tab = Tab.JAM },
+                        onClick = { tabOrdinal = Tab.JAM.ordinal },
                         icon = { Icon(Icons.Filled.Podcasts, contentDescription = null) },
                         label = { Text(Tab.JAM.label) },
                     )
@@ -154,7 +184,7 @@ fun MuziiNav(
                     tracks = playlistTracks,
                     currentTrackId = currentTrack?.id,
                     isPlaying = isPlaying,
-                    onBack = { openPlaylist = null },
+                    onBack = { openPlaylistId = null },
                     onPlayTrack = playTrack,
                     onStartRadio = { track -> PlayerManager.startRadio(track) },
                     likedIds = likedIds,
@@ -170,9 +200,9 @@ fun MuziiNav(
                         currentTrackId = currentTrack?.id,
                         isPlaying = isPlaying,
                         onPlayTrack = playTrack,
-                        onOpenPlaylist = { openPlaylist = it },
+                        onOpenPlaylist = { openPlaylistId = it.id },
                         onStartRadio = { track -> PlayerManager.startRadio(track) },
-                        onOpenJam = { tab = Tab.JAM },
+                        onOpenJam = { tabOrdinal = Tab.JAM.ordinal },
                         onOpenQueue = { showQueue = true },
                         likedIds = likedIds,
                         dislikedIds = dislikedIds,
@@ -202,7 +232,21 @@ fun MuziiNav(
                     )
                     Tab.LIBRARY -> LibraryScreen(
                         playlists = playlists,
-                        onOpenPlaylist = { openPlaylist = it },
+                        onOpenPlaylist = { openPlaylistId = it.id },
+                        // Keyed on likedIds so liking a song while Library is
+                        // open actually updates the card: reading the store
+                        // directly is invisible to Compose.
+                        likedTracks = remember(likedIds) { TasteStore.likedTracks() },
+                        recentTracks = PlayLog.recentlyPlayedTracks(50),
+                        onPlayLiked = {
+                            val liked = TasteStore.likedTracks()
+                            if (liked.isNotEmpty()) PlayerManager.playQueue(liked, 0)
+                        },
+                        onPlayRecent = {
+                            val recent = PlayLog.recentlyPlayedTracks(50)
+                            if (recent.isNotEmpty()) PlayerManager.playQueue(recent, 0)
+                        },
+                        currentTrackId = currentTrack?.id,
                     )
                     Tab.JAM -> JamScreen()
                 }
@@ -245,6 +289,10 @@ fun MuziiNav(
             sleepRemainingMs = sleepRemainingMs,
             sleepAtTrackEnd = sleepAtTrackEnd,
             onSetSleepTimer = { PlayerManager.setSleepTimer(it) },
+            shuffle = shuffle,
+            onToggleShuffle = { PlayerManager.toggleShuffle() },
+            repeatMode = repeatMode,
+            onCycleRepeat = { PlayerManager.cycleRepeat() },
         )
     }
 }

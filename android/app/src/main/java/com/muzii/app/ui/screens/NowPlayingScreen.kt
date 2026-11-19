@@ -19,6 +19,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Pause
@@ -37,17 +40,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Track
+import com.muzii.app.playback.PlayerManager
 import com.muzii.app.ui.components.ArtworkBox
+import com.muzii.app.ui.theme.AccentGreen
 import com.muzii.app.ui.theme.ApplePink
+import com.muzii.app.ui.theme.gradientFor
 import com.muzii.app.ui.theme.TextSecondary
 
 @Composable
@@ -78,9 +88,24 @@ fun NowPlayingScreen(
     sleepAtTrackEnd: Boolean = false,
     /** minutes > 0 = countdown, 0 = end of track, null = cancel. */
     onSetSleepTimer: (Int?) -> Unit = {},
+    /** Shuffle, matching the web player. */
+    shuffle: Boolean = false,
+    onToggleShuffle: () -> Unit = {},
+    /** Repeat cycle: off → all → one. */
+    repeatMode: PlayerManager.RepeatMode = PlayerManager.RepeatMode.OFF,
+    onCycleRepeat: () -> Unit = {},
 ) {
     var timerOpen by remember { mutableStateOf(false) }
-    val hue = (track.gradientSeed % 360).toFloat()
+    // Apple Music rests the artwork slightly smaller while paused and lets it
+    // settle larger when playing. Subtle: 0.94 → 1.0, no bounce.
+    val artScale by animateFloatAsState(
+        targetValue = if (isPlaying) 1f else 0.94f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.9f,
+            stiffness = 320f,
+        ),
+        label = "artworkScale",
+    )
 
     // Responsive artwork: shrink on short/landscape screens so the controls
     // never get pushed off the bottom.
@@ -95,8 +120,13 @@ fun NowPlayingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(
+                // Three stops instead of two: the single hard step from a
+                // saturated colour to pure black read as a band across the
+                // top of the screen.
                 Brush.verticalGradient(
-                    listOf(Color.hsv(hue, 0.7f, 0.55f), Color.Black),
+                    0f to gradientFor(track.gradientSeed, soft = true).first().copy(alpha = 0.9f),
+                    0.45f to Color.Black.copy(alpha = 0.85f),
+                    1f to Color.Black,
                 ),
             )
             // Scrollable so nothing is ever clipped (small phones, landscape,
@@ -149,7 +179,14 @@ fun NowPlayingScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
-        ArtworkBox(track = track, size = artSize)
+        ArtworkBox(
+            track = track,
+            size = artSize,
+            modifier = Modifier.graphicsLayer {
+                scaleX = artScale
+                scaleY = artScale
+            },
+        )
         Spacer(Modifier.height(32.dp))
         // Heart sits beside the title, Apple Music style. The title takes the
         // remaining width so a long name can never squeeze the button off.
@@ -166,11 +203,25 @@ fun NowPlayingScreen(
                 modifier = Modifier.weight(1f, fill = false),
                 textAlign = TextAlign.End,
             )
+            // A one-shot 1.2x pop when the heart fills, so the tap is
+            // acknowledged without the icon dancing on every recomposition.
+            val heartScale by animateFloatAsState(
+                targetValue = if (liked) 1.12f else 1f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = 0.55f,
+                    stiffness = 600f,
+                ),
+                label = "heartScale",
+            )
             IconButton(onClick = onToggleLike, modifier = Modifier.size(48.dp)) {
                 Icon(
                     if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                     contentDescription = if (liked) "Unlike" else "Like",
                     tint = if (liked) ApplePink else Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = heartScale
+                        scaleY = heartScale
+                    },
                 )
             }
         }
@@ -238,6 +289,46 @@ fun NowPlayingScreen(
                     contentDescription = "Next",
                     tint = Color.White,
                     modifier = Modifier.size(36.dp),
+                )
+            }
+        }
+
+        // Shuffle / repeat. The web player has had these from the start; the
+        // native player could not randomise or loop a queue at all.
+        Spacer(Modifier.height(8.dp))
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onToggleShuffle, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    Icons.Filled.Shuffle,
+                    contentDescription = if (shuffle) "Shuffle on" else "Shuffle off",
+                    tint = if (shuffle) MaterialTheme.colorScheme.primary
+                    else Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(24.dp))
+            IconButton(onClick = onCycleRepeat, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    if (repeatMode == PlayerManager.RepeatMode.ONE) {
+                        Icons.Filled.RepeatOne
+                    } else {
+                        Icons.Filled.Repeat
+                    },
+                    contentDescription = when (repeatMode) {
+                        PlayerManager.RepeatMode.OFF -> "Repeat off"
+                        PlayerManager.RepeatMode.ALL -> "Repeat all"
+                        PlayerManager.RepeatMode.ONE -> "Repeat one"
+                    },
+                    tint = if (repeatMode == PlayerManager.RepeatMode.OFF) {
+                        Color.White.copy(alpha = 0.6f)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
