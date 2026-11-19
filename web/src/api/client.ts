@@ -17,17 +17,22 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ''
 const REQUEST_TIMEOUT_MS = 12_000;
 
 async function apiFetch<T>(path: string): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const res = await fetchWithAdBlock(`${API_BASE}${path}`, {
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(timer);
+  const candidates = API_BASE ? [`${API_BASE}${path}`, path] : [path];
+  let lastError: unknown = null;
+  for (const url of candidates) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetchWithAdBlock(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
+      return (await res.json()) as T;
+    } catch (err) {
+      lastError = err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw lastError ?? new Error(`API ${path} failed`);
 }
 
 export async function getCatalog(): Promise<Track[]> {
@@ -69,11 +74,13 @@ export async function getTrack(id: string): Promise<Track | null> {
 }
 
 /**
- * Stream URL — always proxied through the Worker (range + cache + ad-block).
- * YouTube tracks have no usable direct URL (`ytmusic://…` is a marker), so
- * the proxy is the only playable path. If the proxy fails, PlayerContext
- * retries with the track's direct URL (works for demo tracks).
+ * Stream URL — always same-origin `/api/stream/:id` when no explicit Worker
+ * URL is configured: Cloudflare Pages proxies it to the Worker via
+ * `_redirects`, so there is no cross-origin/CORS hop. YouTube and JioSaavn
+ * tracks have no usable direct URL (id-only, resolved server-side), so the
+ * proxy is the only playable path; PlayerContext retries with the track's
+ * own URL if that fails (works for demo tracks).
  */
 export function streamUrl(track: Track): string {
-  return `${API_BASE}/api/stream/${track.id}`;
+  return `${API_BASE}/api/stream/${encodeURIComponent(track.id)}`;
 }

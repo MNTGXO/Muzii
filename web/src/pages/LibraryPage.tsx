@@ -24,7 +24,9 @@ export function LibraryPage({
               <Play size={28} />
             </span>
             <span className="album-title">{pl.title}</span>
-            <span className="album-sub">{pl.trackIds.length} songs</span>
+            <span className="album-sub">
+                {pl.tracks?.length ?? pl.trackIds.length} songs
+              </span>
           </button>
         ))}
       </div>

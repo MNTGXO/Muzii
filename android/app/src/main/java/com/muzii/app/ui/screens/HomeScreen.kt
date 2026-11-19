@@ -57,7 +57,10 @@ fun HomeScreen(
         }
         playlists.firstOrNull()?.let { featured ->
             item {
-                val featuredTracks = tracks.filter { featured.trackIds.contains(it.id) }
+                // Prefer embedded tracks — provider playlist ids are not in
+                // the catalog, so filtering renders an empty playlist.
+                val featuredTracks = featured.tracks?.takeIf { it.isNotEmpty() }
+                    ?: tracks.filter { featured.trackIds.contains(it.id) }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
