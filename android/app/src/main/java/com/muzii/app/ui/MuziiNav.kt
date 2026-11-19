@@ -272,6 +272,9 @@ fun MuziiNav(
             dislikedIds = dislikedIds,
             onToggleLike = onToggleLike,
             onToggleDislike = onToggleDislike,
+            onRemove = { PlayerManager.removeAt(it) },
+            onMove = { from, to -> PlayerManager.moveItem(from, to) },
+            onPlayNext = { PlayerManager.playNext(it) },
         )
     }
 
