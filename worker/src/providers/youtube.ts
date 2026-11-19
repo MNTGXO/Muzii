@@ -112,6 +112,12 @@ const PLAYER_CLIENTS: InnerTubeClient[] = [
 
 const INNER_TUBE_KEY = 'AIzaSyC9XL3ZjWddXya6XNWIqC5LtJXo3GtNLYg';
 const BASE = 'https://music.youtube.com/youtubei/v1';
+/**
+ * Per-call ceiling. Shorter than JioSaavn's budget on purpose: YouTube is the
+ * fallback, so it must never dominate the request's total time. A slow
+ * fallback is worse than a fast failure that lets the demo provider answer.
+ */
+const INNER_TUBE_TIMEOUT_MS = 4000;
 const STREAM_SCHEME = 'ytmusic://';
 
 function innerTubeHeaders(client: InnerTubeClient): HeadersInit {
@@ -144,10 +150,21 @@ async function innerTubePost(
   path: string,
   body: Record<string, unknown>,
 ): Promise<any> {
+  /*
+   * A hard timeout. InnerTube has no SLA and is routinely slow or blackholed
+   * from datacenter IPs (which is why JioSaavn leads the provider chain), but
+   * a fetch with no signal waits until the platform kills the request.
+   *
+   * That mattered: /api/catalog fans out to six searches, and if JioSaavn
+   * failed first, these calls became the critical path. The client timed out
+   * before the Worker answered and fell back to bundled demo tracks — the app
+   * looked broken while the Worker was merely slow.
+   */
   const res = await fetch(`${BASE}/${path}?key=${INNER_TUBE_KEY}&prettyPrint=false`, {
     method: 'POST',
     headers: innerTubeHeaders(client),
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(INNER_TUBE_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`InnerTube ${client.clientName} ${path} failed: ${res.status}`);

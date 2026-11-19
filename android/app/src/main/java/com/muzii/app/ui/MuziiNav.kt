@@ -60,6 +60,7 @@ fun MuziiNav(
     onToggleDislike: (Track) -> Unit = {},
     /** True when the catalog is the bundled demo set (backend unreachable). */
     offline: Boolean = false,
+    offlineReason: String? = null,
     onRetry: () -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(Tab.HOME) }
@@ -178,6 +179,7 @@ fun MuziiNav(
                         onToggleLike = onToggleLike,
                         onToggleDislike = onToggleDislike,
                         offline = offline,
+                        offlineReason = offlineReason,
                         onRetry = onRetry,
                         // Read straight from PlayLog: it changes as tracks
                         // finish, and this composable already recomposes on

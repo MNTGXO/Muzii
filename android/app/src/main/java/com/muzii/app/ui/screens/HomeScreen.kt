@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Calendar
 import com.muzii.app.ui.components.ArtworkBox
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
@@ -61,6 +62,7 @@ fun HomeScreen(
     recentlyPlayed: List<Track> = emptyList(),
     topPlayed: List<Track> = emptyList(),
     offline: Boolean = false,
+    offlineReason: String? = null,
     onRetry: () -> Unit = {},
 ) {
     // When there is a play log, the song list IS the listener's top songs;
@@ -97,7 +99,10 @@ fun HomeScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "These are offline sample tracks. Check your connection and retry.",
+                            // Name the actual failure. "Check your connection"
+                            // sent people looking at WiFi when the real
+                            // problem was an unreachable API host.
+                            offlineReason ?: "Showing built-in sample tracks. Retry to try again.",
                             color = TextSecondary,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -109,7 +114,7 @@ fun HomeScreen(
         }
         item {
             Text(
-                "Good evening",
+                greeting(),
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White,
                 modifier = Modifier.padding(16.dp),
@@ -259,13 +264,33 @@ fun HomeScreen(
                 }
             }
         }
-        item {
-            Text(
-                if (topPlayed.isNotEmpty()) "Your top songs" else "Start here",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                modifier = Modifier.padding(16.dp),
-            )
+        // The heading used to be emitted here, with the Playlists block (and
+        // its heading) in between, so "Start here" sat above nothing while the
+        // actual songs appeared after "Playlists". Emit the heading only when
+        // there are songs to put under it, and put the songs directly below.
+        if (shelfTracks.isNotEmpty()) {
+            item {
+                Text(
+                    if (topPlayed.isNotEmpty()) "Your top songs" else "Start here",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+            itemsIndexed(shelfTracks) { index, track ->
+                TrackRow(
+                    track = track,
+                    index = index,
+                    isActive = track.id == currentTrackId,
+                    isPlaying = isPlaying,
+                    onClick = { onPlayTrack(track, shelfTracks) },
+                    onStartRadio = { onStartRadio(track) },
+                    isLiked = likedIds.contains(track.id),
+                    isDisliked = dislikedIds.contains(track.id),
+                    onToggleLike = { onToggleLike(track) },
+                    onToggleDislike = { onToggleDislike(track) },
+                )
+            }
         }
         item {
             Text(
@@ -316,20 +341,19 @@ fun HomeScreen(
                 }
             }
         }
-        itemsIndexed(shelfTracks) { index, track ->
-            TrackRow(
-                track = track,
-                index = index,
-                isActive = track.id == currentTrackId,
-                isPlaying = isPlaying,
-                onClick = { onPlayTrack(track, shelfTracks) },
-                onStartRadio = { onStartRadio(track) },
-                isLiked = likedIds.contains(track.id),
-                isDisliked = dislikedIds.contains(track.id),
-                onToggleLike = { onToggleLike(track) },
-                onToggleDislike = { onToggleDislike(track) },
-            )
-        }
         item { Spacer(Modifier.height(120.dp)) }
+    }
+}
+
+/**
+ * Time-aware greeting. This was hardcoded to "Good evening", which was wrong
+ * for most of the day — visible immediately on first launch.
+ */
+private fun greeting(): String {
+    return when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        in 17..21 -> "Good evening"
+        else -> "Good night"
     }
 }

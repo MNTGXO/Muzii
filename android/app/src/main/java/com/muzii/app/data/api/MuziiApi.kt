@@ -60,8 +60,15 @@ object MuziiApiFactory {
                     level = HttpLoggingInterceptor.Level.BASIC
                 },
             )
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            // /api/catalog fans out to up to six provider searches, so it
+            // legitimately takes a few seconds — but a 30 s read timeout
+            // meant a stalled backend held the home screen blank for half a
+            // minute before the demo fallback appeared. 12 s is longer than a
+            // healthy catalog call and short enough to fail visibly.
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
         return Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)

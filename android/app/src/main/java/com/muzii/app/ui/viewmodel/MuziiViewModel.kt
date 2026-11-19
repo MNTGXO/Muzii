@@ -41,6 +41,10 @@ class MuziiViewModel(
     private val _offline = MutableStateFlow(false)
     val offline: StateFlow<Boolean> = _offline.asStateFlow()
 
+    /** Human-readable reason the backend was unreachable, when it was. */
+    private val _offlineReason = MutableStateFlow<String?>(null)
+    val offlineReason: StateFlow<String?> = _offlineReason.asStateFlow()
+
     private var searchJob: Job? = null
 
     /** True until the listener picks languages (or skips). */
@@ -53,6 +57,7 @@ class MuziiViewModel(
             // The catalog is language-scoped, so taste must be loaded first.
             _tracks.value = repository.getCatalog()
             _offline.value = repository.usingDemoCatalog
+            _offlineReason.value = repository.lastError
             _loading.value = false
             _searchResults.value = _tracks.value
             _playlists.value = repository.getPlaylists()
@@ -91,6 +96,7 @@ class MuziiViewModel(
             _loading.value = true
             _tracks.value = repository.getCatalog()
             _offline.value = repository.usingDemoCatalog
+            _offlineReason.value = repository.lastError
             _playlists.value = repository.getPlaylists()
             _loading.value = false
         }

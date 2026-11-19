@@ -25,6 +25,12 @@ only way, and it works exactly the same afterwards.)
 **Prefer an APK?** The [latest release](https://github.com/MNTGXO/Muzii/releases/latest)
 has a single `muzii.apk`. It's a work in progress — see *Known issues* below.
 
+> **Updating from an older APK? Uninstall once first.**
+> Earlier builds were each signed with a different key, so Android refuses to
+> install the new one over the old ("App not installed"). Uninstall Muzii, then
+> install the new APK. From this version on the key is fixed, so later updates
+> install straight over the top — no uninstalling again.
+
 ---
 
 ## What you get
@@ -50,6 +56,9 @@ Honest list, not a promise of perfection:
 - **The APK is behind the web app.** Web is where features land first and is
   the most reliable place to listen right now. The installed web app is the
   better choice unless you specifically want the native build.
+- **The APK may show sample tracks on first launch.** If it can't reach the
+  music service, it says exactly what failed and offers Retry. Tapping Retry
+  once your connection is back is enough.
 - **Some Android phones kill background audio.** On certain Xiaomi, Oppo and
   Vivo builds, swiping the app away stops the music service and its
   notification. Resuming then has to happen from inside the app.

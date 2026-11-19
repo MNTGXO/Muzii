@@ -4,6 +4,11 @@ on:
   push:
     branches: [mnbots]
     tags: ['v*']
+  # Compile every pull request that touches Android or this workflow. Without
+  # this, a Kotlin error could only be discovered AFTER merging to mnbots —
+  # the build simply never ran on a branch, so the PR looked green.
+  pull_request:
+    paths: ['android/**', '.github/workflows/build-apk.yml']
   workflow_dispatch:
 
 permissions:
@@ -38,8 +43,27 @@ jobs:
           echo "$RUNNER_TEMP/gradle-8.7/bin" >> "$GITHUB_PATH"
           gradle --version
 
-      # Point the APK at the deployed backend. Falls back to the public
-      # Pages site, which proxies /api/* to the Worker.
+      # Catch an unreadable or rotated keystore BEFORE spending minutes on
+      # Gradle: an unopenable keystore otherwise surfaces as a confusing
+      # signing failure deep inside the release task.
+      - name: Verify the release keystore opens
+        working-directory: android
+        env:
+          MUZII_STORE_PASSWORD: ${{ secrets.MUZII_STORE_PASSWORD }}
+        run: |
+          if [ ! -f keystore/muzii-release.p12 ]; then
+            echo "::error::android/keystore/muzii-release.p12 is missing - builds would be signed with a throwaway key."
+            exit 1
+          fi
+          keytool -list -keystore keystore/muzii-release.p12 \
+            -storetype PKCS12 -storepass "${MUZII_STORE_PASSWORD:-muzii-release}" \
+            -alias muzii
+          echo "Release keystore is readable and contains the 'muzii' key."
+
+      # Point the APK straight at the Worker. It used to default to the Pages
+      # site, which only works if a generated `_redirects` proxy was written at
+      # web-build time — so an APK could ship with every /api/* call 404ing and
+      # silently run on its bundled demo tracks forever.
       #
       # Only ONE APK is produced. Shipping both a debug and a release APK
       # meant two identical-looking downloads and no way to tell which to
@@ -48,7 +72,18 @@ jobs:
       - name: Build APK
         working-directory: android
         env:
-          MUZII_API_BASE_URL: ${{ vars.WORKER_URL || 'https://muzii.pages.dev/' }}
+          MUZII_API_BASE_URL: ${{ vars.WORKER_URL || 'https://muzii.mn-bots.workers.dev/' }}
+          MUZII_STORE_PASSWORD: ${{ secrets.MUZII_STORE_PASSWORD }}
+          MUZII_KEY_PASSWORD: ${{ secrets.MUZII_KEY_PASSWORD }}
+          # Monotonic version, so Android treats each release as newer than
+          # the last. Without this every APK claimed to be 1.0.0 (code 1) and
+          # the installer had no reason to replace what was already there.
+          # NOTE: GitHub expressions have no arithmetic operators, so
+          # `10000 + github.run_number` is a syntax error that fails the whole
+          # workflow. run_number alone is monotonic and far exceeds the old
+          # frozen value of 1, which is all Android requires.
+          MUZII_VERSION_CODE: ${{ github.run_number }}
+          MUZII_VERSION_NAME: ${{ github.ref_name == 'mnbots' && format('1.3.{0}', github.run_number) || github.ref_name }}
         # pipefail matters: a pipeline reports only its LAST command's status,
         # so without this tee succeeds, the step goes green, and a failed
         # compile only surfaces later as "Rename APK: no such file".
@@ -73,6 +108,28 @@ jobs:
           cp android/app/build/outputs/apk/release/*.apk dist/muzii.apk
           ls -lh dist/
 
+      # A release signed with a throwaway debug key cannot install over the
+      # previous version ("App not installed"), which is exactly how users got
+      # stranded on old builds. Fail loudly if that ever regresses instead of
+      # shipping an APK nobody can update.
+      - name: Verify the APK is signed with the committed release key
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          APKSIGNER=$(find "$SDK/build-tools" -name apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then echo "::error::apksigner not found"; exit 1; fi
+          echo "Using $APKSIGNER"
+          "$APKSIGNER" verify --print-certs dist/muzii.apk | tee /tmp/certs.txt
+          if ! grep -qi "CN=Muzii" /tmp/certs.txt; then
+            echo "::error::APK is NOT signed with the Muzii release key - updates will fail to install."
+            exit 1
+          fi
+          # Debug keys carry CN=Android Debug. Never ship one.
+          if grep -qi "CN=Android Debug" /tmp/certs.txt; then
+            echo "::error::APK was signed with the disposable Android debug key."
+            exit 1
+          fi
+          echo "Signed with the stable Muzii key - in-place updates will work."
+
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
@@ -95,6 +152,11 @@ jobs:
 
             Ad-free streaming, song radio that stays in your language, and
             collaborative Jam rooms.
+
+            > **If you have an older Muzii installed, uninstall it once
+            > first.** Older builds were signed with a different key, so
+            > Android refuses to install over them. From this build on the
+            > key is fixed and updates install normally.
           files: dist/muzii.apk
           draft: false
           prerelease: false
@@ -103,7 +165,7 @@ jobs:
       # When the build breaks, post the compiler errors as a comment so they
       # are readable without digging through the Actions UI.
       - name: Report build failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
