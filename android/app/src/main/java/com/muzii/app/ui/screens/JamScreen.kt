@@ -74,7 +74,7 @@ fun JamScreen() {
     LaunchedEffect(token) {
         val current = token ?: return@LaunchedEffect
         while (true) {
-            runCatching { api.getJam(code) }.onSuccess { state = it }
+            runCatching { api.getJam(code, current) }.onSuccess { state = it }
             delay(4000)
         }
     }
@@ -155,8 +155,11 @@ fun JamScreen() {
                     Button(
                         onClick = {
                             scope.launch {
-                                runCatching { api.skip(code, mapOf("token" to (token ?: ""))) }
-                                state = room
+                                // Apply the room's new state; the poll would
+                                // otherwise flash the old track back.
+                                runCatching {
+                                    api.skip(code, mapOf("token" to (token ?: "")))
+                                }.onSuccess { state = it }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
