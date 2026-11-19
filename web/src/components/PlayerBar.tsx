@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import {
   AlertTriangle,
   ChevronUp,
+  Heart,
   ListMusic,
   Loader2,
   Pause,
@@ -14,6 +15,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { usePlayer } from '../player/PlayerContext';
+import { useTaste } from '../taste/TasteContext';
 import { Artwork } from './Artwork';
 import { formatTime } from '../utils/format';
 
@@ -25,6 +27,7 @@ export function PlayerBar({
   onToggleQueue: () => void;
 }) {
   const p = usePlayer();
+  const { isLiked, toggleLike } = useTaste();
   if (!p.current) return null;
 
   const pct = p.duration > 0 ? (p.progress / p.duration) * 100 : 0;
@@ -47,6 +50,23 @@ export function PlayerBar({
         </span>
         <ChevronUp size={18} className="pb-expand-icon" />
       </button>
+
+      {/*
+        Heart on the mini bar too - liking was previously only reachable from
+        the queue. Deliberately no dislike here: this strip is 60px tall and a
+        mis-tapped dislike bans a song from the feed, so that stays a
+        deliberate action on the full player or the queue.
+      */}
+      <div className="pb-left">
+        <button
+          className={`pb-like${isLiked(p.current.id) ? ' on' : ''}`}
+          onClick={() => toggleLike(p.current!)}
+          aria-pressed={isLiked(p.current.id)}
+          aria-label={isLiked(p.current.id) ? 'Unlike' : 'Like'}
+        >
+          <Heart size={18} fill={isLiked(p.current.id) ? 'currentColor' : 'none'} />
+        </button>
+      </div>
 
       <div className="pb-controls">
         <button

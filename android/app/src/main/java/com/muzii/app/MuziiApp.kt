@@ -1,6 +1,7 @@
 package com.muzii.app
 
 import android.app.Application
+import com.muzii.app.data.taste.PlayLog
 import com.muzii.app.data.taste.TasteStore
 
 /**
@@ -14,5 +15,6 @@ class MuziiApp : Application() {
     override fun onCreate() {
         super.onCreate()
         TasteStore.init(this)
+        PlayLog.init(this)
     }
 }

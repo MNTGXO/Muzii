@@ -15,12 +15,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbDownOffAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Track
 import com.muzii.app.ui.components.ArtworkBox
+import com.muzii.app.ui.theme.ApplePink
 import com.muzii.app.ui.theme.TextSecondary
 
 @Composable
@@ -52,6 +57,15 @@ fun NowPlayingScreen(
     onClose: () -> Unit,
     /** Opens the Up Next list (there was no way to see the queue before). */
     onOpenQueue: (() -> Unit)? = null,
+    /**
+     * Like / dislike for the track that is playing. Previously these existed
+     * only in the queue, so the one screen where you are actually looking at
+     * the song had no way to rate it. Mirrors the web player.
+     */
+    liked: Boolean = false,
+    disliked: Boolean = false,
+    onToggleLike: () -> Unit = {},
+    onToggleDislike: () -> Unit = {},
 ) {
     val hue = (track.gradientSeed % 360).toFloat()
 
@@ -109,13 +123,45 @@ fun NowPlayingScreen(
         Spacer(Modifier.height(24.dp))
         ArtworkBox(track = track, size = artSize)
         Spacer(Modifier.height(32.dp))
-        Text(
-            track.title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = Color.White,
-            maxLines = 1,
-        )
-        Text("${track.artist} — ${track.album}", color = TextSecondary, maxLines = 1)
+        // Heart sits beside the title, Apple Music style. The title takes the
+        // remaining width so a long name can never squeeze the button off.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                track.title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+                textAlign = TextAlign.End,
+            )
+            IconButton(onClick = onToggleLike, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (liked) "Unlike" else "Like",
+                    tint = if (liked) ApplePink else Color.White.copy(alpha = 0.75f),
+                )
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("${track.artist} — ${track.album}", color = TextSecondary, maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false))
+            IconButton(onClick = onToggleDislike, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    if (disliked) Icons.Filled.ThumbDown else Icons.Filled.ThumbDownOffAlt,
+                    contentDescription = if (disliked) "Stop disliking" else "Dislike",
+                    tint = if (disliked) Color(0xFF64D2FF) else Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(24.dp))
         Slider(
             value = positionMs.toFloat(),

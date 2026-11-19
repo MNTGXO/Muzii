@@ -223,6 +223,47 @@ input { font: inherit; color: inherit; }
   letter-spacing: -0.01em;
 }
 
+/* Home: "On repeat" station banner */
+.section-hint {
+  margin: -4px 0 14px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  max-width: 46ch;
+}
+.repeat-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 55, 95, 0.18), rgba(120, 60, 200, 0.16));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  transition: transform 0.18s var(--ease), border-color 0.18s;
+}
+.repeat-banner:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.18); }
+.repeat-banner-art { display: flex; flex-shrink: 0; }
+.repeat-banner-art-card { margin-left: -16px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); border-radius: 10px; }
+.repeat-banner-art-card:first-child { margin-left: 0; }
+.repeat-banner-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.repeat-banner-text strong { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repeat-banner-text span { color: var(--text-2); font-size: 12.5px; }
+.repeat-banner-play {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: var(--apple-red);
+  color: #fff;
+}
+@media (max-width: 430px) {
+  .repeat-banner-art-card:nth-child(3) { display: none; }
+  .repeat-banner-text span { display: none; }
+}
+
 /* Home header */
 .home-header { display: flex; align-items: flex-end; justify-content: space-between; }
 .home-header .page-title { margin-bottom: 20px; }
@@ -520,7 +561,26 @@ input { font: inherit; color: inherit; }
   animation: fade-in 0.4s ease both;
 }
 
-.pb-track { display: flex; align-items: center; gap: 12px; text-align: left; min-width: 0; }
+.pb-track { display: flex; align-items: center; gap: 12px; text-align: left; min-width: 0; flex: 1 1 auto; }
+
+/*
+ * The bar is a 3-column grid (track | transport | volume). The heart is its
+ * own column so the transport stays optically centred; without that it would
+ * push the play button off-centre.
+ */
+.player-bar { grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr); }
+.pb-left { display: flex; align-items: center; gap: 6px; }
+.pb-like {
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  padding: 6px;
+  border-radius: 999px;
+  transition: color 0.15s, transform 0.18s var(--ease);
+}
+.pb-like:hover { color: var(--text); transform: scale(1.1); }
+.pb-like.on { color: var(--apple-red-light); }
+.pb-like.on:hover { color: var(--apple-red-light); }
 .pb-meta { display: flex; flex-direction: column; min-width: 0; }
 .pb-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-artist { color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -748,9 +808,56 @@ input[type='range']::-moz-range-thumb {
   50% { transform: scale(1.018); }
 }
 
-.np-meta { text-align: center; margin-top: 28px; }
-.np-meta h2 { margin: 0 0 6px; font-size: clamp(18px, 5vw, 26px); letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.np-meta p { margin: 0; color: rgba(255, 255, 255, 0.75); }
+.np-meta { margin-top: 28px; }
+.np-title-row,
+.np-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: min(560px, 92vw);
+  margin: 0 auto;
+}
+.np-title-row h2 {
+  margin: 0;
+  font-size: clamp(18px, 5vw, 26px);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+  /* Never let a long title shove the heart off the edge. */
+  min-width: 0;
+}
+.np-sub-row { margin-top: 6px; }
+.np-meta p { margin: 0; color: rgba(255, 255, 255, 0.75); min-width: 0; }
+.np-like,
+.np-dislike {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: color 0.18s, transform 0.18s var(--ease);
+}
+.np-like:hover,
+.np-dislike:hover { color: #fff; transform: scale(1.1); }
+.np-like.on { color: var(--apple-red-light); }
+.np-like.on:hover { color: var(--apple-red-light); }
+.np-dislike.on { color: #64d2ff; }
+.np-dislike.on:hover { color: #64d2ff; }
+
+/* Acknowledge the tap; phones give no hover feedback. */
+@keyframes np-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.32); }
+  100% { transform: scale(1); }
+}
+.np-like.pulse,
+.np-dislike.pulse { animation: np-pulse 0.42s var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .np-like.pulse,
+  .np-dislike.pulse { animation: none; }
+}
 
 .np-progress {
   display: flex;
@@ -1268,10 +1375,10 @@ input[type='range']::-moz-range-thumb {
   .main { padding: 18px 16px 24px; }
   .main::before { left: 0; }
 
-  /* Player becomes a compact two-row bar above the tab bar. */
+  /* Player becomes a compact bar above the tab bar: art/title | heart | transport. */
   .player-bar {
     grid-column: 1;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 10px;
     padding: 10px 14px;
   }

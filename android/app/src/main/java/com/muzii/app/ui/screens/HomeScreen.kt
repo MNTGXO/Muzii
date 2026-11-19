@@ -56,9 +56,15 @@ fun HomeScreen(
     dislikedIds: List<String> = emptyList(),
     onToggleLike: (Track) -> Unit = {},
     onToggleDislike: (Track) -> Unit = {},
+    /** What this listener actually played, for the personal shelves. */
+    recentlyPlayed: List<Track> = emptyList(),
+    topPlayed: List<Track> = emptyList(),
     offline: Boolean = false,
     onRetry: () -> Unit = {},
 ) {
+    // When there is a play log, the song list IS the listener's top songs;
+    // otherwise fall back to the language feed so a new profile isn't empty.
+    val shelfTracks = if (topPlayed.isNotEmpty()) topPlayed else tracks.take(12)
     // Responsive card sizing: two-and-a-bit cards on a phone, more on a
     // tablet or in landscape, instead of one fixed 150.dp everywhere.
     val screenWidthDp = LocalConfiguration.current.screenWidthDp
@@ -193,6 +199,73 @@ fun HomeScreen(
                 }
             }
         }
+        // ---- personal shelves -------------------------------------------
+        // These used to be the first N catalog tracks, so "Recently played"
+        // showed songs the listener had never played. They now come from
+        // PlayLog, which is filled as tracks actually finish.
+        if (recentlyPlayed.isNotEmpty()) {
+            item {
+                Text(
+                    "Recently played",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(recentlyPlayed, key = { it.id }) { track ->
+                        Column(
+                            modifier = Modifier
+                                .width(112.dp)
+                                .clickable { onPlayTrack(track, recentlyPlayed) },
+                        ) {
+                            ArtworkBox(track = track, size = 112.dp)
+                            Spacer(Modifier.height(6.dp))
+                            Text(track.title, color = Color.White, maxLines = 1)
+                            Text(
+                                track.artist,
+                                color = TextSecondary,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (topPlayed.isNotEmpty()) {
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(16.dp),
+                ) {
+                    Text(
+                        "On repeat",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${topPlayed.first().title} · most played",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        item {
+            Text(
+                if (topPlayed.isNotEmpty()) "Your top songs" else "Start here",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
         item {
             Text(
                 "Playlists",
@@ -242,21 +315,13 @@ fun HomeScreen(
                 }
             }
         }
-        item {
-            Text(
-                "Top Tracks",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                modifier = Modifier.padding(16.dp),
-            )
-        }
-        itemsIndexed(tracks) { index, track ->
+        itemsIndexed(shelfTracks) { index, track ->
             TrackRow(
                 track = track,
                 index = index,
                 isActive = track.id == currentTrackId,
                 isPlaying = isPlaying,
-                onClick = { onPlayTrack(track, tracks) },
+                onClick = { onPlayTrack(track, shelfTracks) },
                 onStartRadio = { onStartRadio(track) },
                 isLiked = likedIds.contains(track.id),
                 isDisliked = dislikedIds.contains(track.id),

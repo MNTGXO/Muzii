@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -26,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Track
 import com.muzii.app.ui.theme.SurfaceElevated
+import com.muzii.app.ui.theme.ApplePink
 import com.muzii.app.ui.theme.TextSecondary
 
 @Composable
@@ -36,6 +39,9 @@ fun MiniPlayerBar(
     onNext: () -> Unit,
     onPrev: () -> Unit,
     onOpen: () -> Unit,
+    /** Heart on the mini bar too; no dislike here - see the comment below. */
+    liked: Boolean = false,
+    onToggleLike: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -56,6 +62,16 @@ fun MiniPlayerBar(
                     color = TextSecondary,
                     maxLines = 1,
                     style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            // Heart on the mini bar. Deliberately no dislike: this strip is
+            // ~60dp tall and a mis-tapped dislike bans the song from the feed,
+            // so that stays a deliberate action on the full player or queue.
+            IconButton(onClick = onToggleLike) {
+                Icon(
+                    if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (liked) "Unlike" else "Like",
+                    tint = if (liked) ApplePink else TextSecondary,
                 )
             }
             IconButton(onClick = onPrev) {
