@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -62,6 +63,43 @@ fun SearchScreen(
                 unfocusedBorderColor = TextSecondary,
             ),
         )
+        // An empty result set used to render as a blank panel with no
+        // explanation, which reads as a broken screen rather than "no matches".
+        if (results.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = TextSecondary.copy(alpha = 0.5f),
+                    modifier = Modifier.size(44.dp),
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    if (query.isBlank()) "Find something to play" else "No matches for \"$query\"",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (query.isBlank()) {
+                        "Search across every language. Your home feed stays \nscoped to the languages you picked."
+                    } else {
+                        "Try a shorter phrase, or the singer's name."
+                    },
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+            return@Column
+        }
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             itemsIndexed(results) { index, track ->
                 TrackRow(

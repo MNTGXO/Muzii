@@ -92,7 +92,10 @@ object TasteStore {
             likedTracks = likedTracks.filterNot { it.id == track.id }
         } else {
             liked.add(track.id)
-            likedTracks = (likedTracks + track).takeLast(40)
+            // History, newest last. The cap exists so the JSON blob cannot grow
+            // without bound, but 40 was low enough that a regular listener
+            // silently lost liked songs; likes are cheap to keep.
+            likedTracks = (likedTracks + track).takeLast(500)
         }
         commit(liked, disliked)
     }
@@ -108,7 +111,7 @@ object TasteStore {
             dislikedTracks = dislikedTracks.filterNot { it.id == track.id }
         } else {
             disliked.add(track.id)
-            dislikedTracks = (dislikedTracks + track).takeLast(40)
+            dislikedTracks = (dislikedTracks + track).takeLast(500)
         }
         commit(liked, disliked)
     }

@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.util.Calendar
 import com.muzii.app.ui.components.ArtworkBox
+import com.muzii.app.ui.components.appear
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
 import com.muzii.app.ui.components.TrackRow
@@ -77,7 +78,10 @@ fun HomeScreen(
         else -> 140.dp
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    // Fade the whole feed in on first composition. Data arrives from the
+    // network, so without this the shelves snap in a beat after the greeting
+    // and the screen visibly "jumps".
+    LazyColumn(modifier = Modifier.fillMaxSize().appear()) {
         if (offline) {
             item {
                 // The demo catalog means the Worker is unreachable. Say so:

@@ -45,6 +45,9 @@ has a single `muzii.apk`. It's a work in progress — see *Known issues* below.
 | **Jam** | Start a room from whatever is playing and share the code. Everyone hears the same song, at the same second. |
 | **Your languages** | Pick your languages once; the feed stays in them. Search still reaches everything. |
 | **Never repeats** | The same song never comes back mid-session, and different uploads of one song count as one song. |
+| **Shuffle and repeat** | Randomise a queue, or loop the whole list or one song. |
+| **Liked Songs** | Everything you've liked, in one place in Library, ready to play. |
+| **Picks up where you left off** | Close the app and your queue and position are still there when you come back. |
 | **Yours** | Likes and dislikes live on your device and shape every station after them. |
 
 ---
@@ -53,9 +56,6 @@ has a single `muzii.apk`. It's a work in progress — see *Known issues* below.
 
 Honest list, not a promise of perfection:
 
-- **The APK is behind the web app.** Web is where features land first and is
-  the most reliable place to listen right now. The installed web app is the
-  better choice unless you specifically want the native build.
 - **The APK may show sample tracks on first launch.** If it can't reach the
   music service, it says exactly what failed and offers Retry. Tapping Retry
   once your connection is back is enough.

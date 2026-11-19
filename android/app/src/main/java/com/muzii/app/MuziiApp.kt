@@ -2,6 +2,7 @@ package com.muzii.app
 
 import android.app.Application
 import com.muzii.app.data.taste.PlayLog
+import com.muzii.app.data.taste.QueueStore
 import com.muzii.app.data.taste.TasteStore
 
 /**
@@ -16,5 +17,6 @@ class MuziiApp : Application() {
         super.onCreate()
         TasteStore.init(this)
         PlayLog.init(this)
+        QueueStore.init(this)
     }
 }

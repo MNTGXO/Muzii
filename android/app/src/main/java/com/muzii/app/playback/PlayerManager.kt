@@ -14,6 +14,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.muzii.app.data.model.Track
 import com.muzii.app.data.taste.PlayLog
+import com.muzii.app.data.taste.QueueStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -78,6 +79,23 @@ object PlayerManager {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /**
+     * Shuffle. The web player has had this all along; the APK had no way to
+     * randomise a queue at all.
+     *
+     * Implemented by carrying ExoPlayer's own `shuffleModeEnabled` rather than
+     * permuting our list, so "up next" order, next/previous and the queue
+     * sheet all agree with what actually plays.
+     */
+    private val _shuffle = MutableStateFlow(false)
+    val shuffle: StateFlow<Boolean> = _shuffle.asStateFlow()
+
+    /** Repeat mode, mirroring the web player: off → all → one. */
+    private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
+    val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
+
+    enum class RepeatMode { OFF, ALL, ONE }
+
     /** "radio" once the queue started extending itself from a seed song. */
     private val _isRadio = MutableStateFlow(false)
     val isRadio: StateFlow<Boolean> = _isRadio.asStateFlow()
@@ -122,12 +140,20 @@ object PlayerManager {
                 }
                 controller = connected
                 connected.addListener(Listener)
+                applyModes(connected)
                 _ready.value = true
                 // Play anything the user queued before connecting.
                 val tracks = pendingQueue
                 if (tracks != null) {
                     runCatching { startPlayback(connected, tracks, pendingIndex) }
                     pendingQueue = null
+                } else {
+                    // Nothing was queued in this process: restore the last
+                    // session, paused, at the position it stopped. Loading it
+                    // paused (not playing) is deliberate — music starting by
+                    // itself when you open the app is hostile, and on Android
+                    // it can be blocked anyway without a user gesture.
+                    restoreSession(connected)
                 }
             },
             ContextCompat.getMainExecutor(context),
@@ -146,6 +172,11 @@ object PlayerManager {
     private val Listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _isPlaying.value = isPlaying
+            // Read the live position before saving: persistQueue() uses the
+            // cached _positionMs, which the 500ms UI ticker keeps fresh while
+            // playing but which lags by up to half a second at pause time.
+            runCatching { _positionMs.value = controller?.currentPosition ?: _positionMs.value }
+            persistQueue()
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -184,6 +215,8 @@ object PlayerManager {
                 sleepTimerHitTrackEnd()
             }
             _currentIndex.value = controller?.currentMediaItemIndex ?: 0
+            _positionMs.value = 0L
+            persistQueue()
             _error.value = null
             // Top up before we actually hit the end, so playback is seamless.
             val c = controller ?: return
@@ -220,6 +253,7 @@ object PlayerManager {
         }
         runCatching {
             c.addMediaItems(fresh.map { toMediaItem(it) })
+            applyModes(c)
             if (c.playbackState == Player.STATE_ENDED || c.playbackState == Player.STATE_IDLE) {
                 c.prepare()
                 c.play()
@@ -253,6 +287,7 @@ object PlayerManager {
         // The session can die while the app is backgrounded; a dead controller
         // must not crash the UI thread.
         runCatching { startPlayback(c, unique, start) }
+        persistQueue()
     }
 
     /** Start a song radio: the seed plays, then the app fills the rest. */
@@ -261,10 +296,77 @@ object PlayerManager {
         maybeExtend()
     }
 
+    /**
+     * Reopen the last queue, paused, where it stopped.
+     *
+     * Uses `setMediaItems(..., startIndex, positionMs)` so the seek happens as
+     * part of preparation — calling seekTo() before prepare() is ignored by
+     * ExoPlayer and silently resumed from 0.
+     */
+    private fun restoreSession(c: MediaController) {
+        val snap = QueueStore.load() ?: return
+        if (_queue.value.isNotEmpty()) return
+        runCatching {
+            _queue.value = snap.tracks
+            _currentIndex.value = snap.index
+            _isRadio.value = snap.radio
+            c.setMediaItems(snap.tracks.map { toMediaItem(it) }, snap.index, snap.positionMs)
+            applyModes(c)
+            _positionMs.value = snap.positionMs
+            c.prepare()
+            // Explicitly NOT calling play(): restored sessions are paused.
+        }
+    }
+
+    /** Snapshot the current session so it survives process death. */
+    private fun persistQueue() {
+        val tracks = _queue.value
+        if (tracks.isEmpty()) {
+            QueueStore.clear()
+            return
+        }
+        QueueStore.save(tracks, _currentIndex.value, _positionMs.value, _isRadio.value)
+    }
+
     private fun startPlayback(c: MediaController, tracks: List<Track>, startIndex: Int) {
         c.setMediaItems(tracks.map { toMediaItem(it) }, startIndex, 0L)
+        applyModes(c)
         c.prepare()
         c.play()
+    }
+
+    /**
+     * Push shuffle/repeat onto the controller.
+     *
+     * Must be re-applied whenever the media items are replaced: setMediaItems
+     * resets repeat mode, so without this a "repeat one" silently became
+     * "repeat off" the next time a playlist started.
+     */
+    private fun applyModes(c: MediaController) {
+        runCatching {
+            c.shuffleModeEnabled = _shuffle.value
+            c.repeatMode = when (_repeatMode.value) {
+                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            }
+        }
+    }
+
+    fun toggleShuffle() {
+        val next = !_shuffle.value
+        _shuffle.value = next
+        controller?.let { applyModes(it) }
+    }
+
+    /** off → all → one → off, matching the web button's cycle. */
+    fun cycleRepeat() {
+        _repeatMode.value = when (_repeatMode.value) {
+            RepeatMode.OFF -> RepeatMode.ALL
+            RepeatMode.ALL -> RepeatMode.ONE
+            RepeatMode.ONE -> RepeatMode.OFF
+        }
+        controller?.let { applyModes(it) }
     }
 
     private fun toMediaItem(track: Track): MediaItem =

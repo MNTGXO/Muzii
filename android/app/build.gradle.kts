@@ -74,7 +74,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 was disabled, and the APK shipped every unused class, all of
+            // media3-ui and the entire extended material icon set — 14 MB for
+            // an app that needs a fraction of it. Minifying plus resource
+            // shrinking roughly halves the download and trims startup work.
+            isMinifyEnabled = true
+            isShrinkResources = true
             // One stable key for every release, so an APK installs OVER the
             // previous one instead of failing the signature check.
             signingConfig = signingConfigs.getByName("release")
