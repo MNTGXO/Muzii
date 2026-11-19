@@ -10,6 +10,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 /** Response of POST /api/jam/:code/join */
@@ -22,8 +23,15 @@ data class JoinResponse(val token: String, val state: JamState)
  * posts actions. Every action takes the guest `token` in the body.
  */
 interface JamApi {
+    /**
+     * Poll the room. The token is a query param (not a body) because this is
+     * a GET — without it the room cannot tell which member is asking.
+     */
     @GET("api/jam/{code}")
-    suspend fun getJam(@Path("code") code: String): JamState
+    suspend fun getJam(
+        @Path("code") code: String,
+        @Query("token") token: String,
+    ): JamState
 
     @POST("api/jam/{code}/join")
     suspend fun join(
