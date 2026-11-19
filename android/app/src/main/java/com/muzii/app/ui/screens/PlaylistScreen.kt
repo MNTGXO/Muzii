@@ -34,6 +34,7 @@ fun PlaylistScreen(
     isPlaying: Boolean,
     onBack: () -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
+    onStartRadio: (Track) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -66,9 +67,9 @@ fun PlaylistScreen(
                     index = index,
                     isActive = track.id == currentTrackId,
                     isPlaying = isPlaying,
-                ) {
-                    onPlayTrack(track, tracks)
-                }
+                    onClick = { onPlayTrack(track, tracks) },
+                    onStartRadio = { onStartRadio(track) },
+                )
             }
             item { Spacer(Modifier.height(120.dp)) }
         }

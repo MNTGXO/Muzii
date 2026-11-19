@@ -13,6 +13,17 @@ APP_NAME = "Muzii"
 # the Worker can proxy. Every provider failure falls through to the next.
 PROVIDER = "jiosaavn"
 
+# Muzii Jam rooms (Durable Objects). Each jam <code> is one Durable Object
+# named after the code, so the room's queue/playback state is serialised.
+# The migration tag must never be edited once deployed — append new tags.
+[[durable_objects.bindings]]
+name = "JAM_ROOMS"
+class_name = "JamRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["JamRoom"]
+
 # Optional: KV namespace for catalog caching.
 # Create with: wrangler kv namespace create CATALOG
 # [[kv_namespaces]]

@@ -15,7 +15,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +38,7 @@ fun TrackRow(
     isActive: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
+    onStartRadio: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -63,6 +66,16 @@ fun TrackRow(
                 maxLines = 1,
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+        // Song radio: same artist / same vibe, never repeats this song.
+        if (onStartRadio != null) {
+            IconButton(onClick = onStartRadio) {
+                Icon(
+                    Icons.Filled.Podcasts,
+                    contentDescription = "Start radio",
+                    tint = TextSecondary,
+                )
+            }
         }
         Icon(
             imageVector = if (isActive && isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,

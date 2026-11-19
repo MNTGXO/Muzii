@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
@@ -45,7 +47,18 @@ fun HomeScreen(
     isPlaying: Boolean,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
+    onStartRadio: (Track) -> Unit = {},
+    onOpenJam: () -> Unit = {},
 ) {
+    // Responsive card sizing: two-and-a-bit cards on a phone, more on a
+    // tablet or in landscape, instead of one fixed 150.dp everywhere.
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val cardSize = when {
+        screenWidthDp >= 900 -> 190.dp
+        screenWidthDp >= 600 -> 168.dp
+        else -> 140.dp
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Text(
@@ -109,6 +122,38 @@ fun HomeScreen(
             }
         }
         item {
+            // Muzii Jam entry point (shared listening).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0x29FA2D48), Color(0x1FBF5AF2)),
+                        ),
+                    )
+                    .clickable(onClick = onOpenJam)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Groups,
+                    contentDescription = null,
+                    tint = Color.White,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Start a Jam", color = Color.White)
+                    Text(
+                        "Listen together — every device stays in sync.",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+        item {
             Text(
                 "Playlists",
                 style = MaterialTheme.typography.titleLarge,
@@ -124,12 +169,12 @@ fun HomeScreen(
                 items(playlists) { pl ->
                     Column(
                         modifier = Modifier
-                            .width(150.dp)
+                            .width(cardSize)
                             .clickable { onOpenPlaylist(pl) },
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(150.dp)
+                                .size(cardSize)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(
                                     Brush.linearGradient(
@@ -172,6 +217,7 @@ fun HomeScreen(
                 isActive = track.id == currentTrackId,
                 isPlaying = isPlaying,
                 onClick = { onPlayTrack(track, tracks) },
+                onStartRadio = { onStartRadio(track) },
             )
         }
         item { Spacer(Modifier.height(120.dp)) }

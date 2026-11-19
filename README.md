@@ -54,6 +54,23 @@ were a Next.js content site with no media proxying.)
 
 ## Features
 
+- 🔁 **Song radio that never repeats** — play *Arikil Pathiye* and the queue
+  continues in that lane (*Thoominnal* next). The queue refills itself when it
+  runs low, and nothing you have heard this session comes back — matched on
+  both track id *and* normalised title+artist, so a "Remastered" duplicate or
+  a re-upload can't sneak in (`worker/src/radio.ts`, `web/src/player/queue.ts`).
+- 🎉 **Muzii Jam** — the Spotify-Jam equivalent. Host a room, share the
+  5-character code or link, and everyone adds to one queue while every device
+  plays the same track at the same time. Guests can skip, chat, and (if the
+  host unlocks it) add songs. Hosted in a Cloudflare Durable Object
+  (`worker/src/jam.ts`), reachable from both web and Android.
+- 📐 **Responsive everywhere** — four breakpoints plus landscape and
+  touch-specific handling: full sidebar → icon rail → bottom tab bar, the
+  queue turns into a bottom sheet, artwork and type scale with `clamp()`, and
+  safe-area insets keep controls clear of the notch. Android resizes its
+  artwork and cards the same way and survives rotation without restarting
+  playback.
+
 - 🎵 **Streaming** — catalog, search, playlists, and a range-aware streaming
   proxy with edge caching (`worker/src/stream.ts`).
 - 🛡️ **Ad blocker (3 layers, one blocklist)**
@@ -69,6 +86,29 @@ were a Next.js content site with no media proxying.)
   SF-like typography, rounded artwork cards, glass player bar, full-screen
   Now Playing — on both web and Android.
 - 📱 **Android app** — Kotlin + Jetpack Compose (Material 3), minSdk 26.
+
+## Muzii Jam
+
+```
+Host (web)                          Guests (web / Android)
+──────────                          ──────────────────────
+POST /api/jam          ──► code AB3K9
+share #/jam/AB3K9      ──► POST /api/jam/AB3K9/join  ──► guest token
+                                               │
+queue / skip / chat    ──► Durable Object ◄────┘
+                          (one per jam code)
+host reports position  ──► guests seek to positionMs + elapsed
+```
+
+Rooms live in a Durable Object keyed by the jam code, so one room's writes
+are serialised. The **host's device is the speaker**: it reports playback
+position and everyone else follows, so audio never has to stream *through*
+the server. Clients poll every 4s — that keeps it deployable on the Workers
+free tier and survives proxies that break WebSockets. Rooms expire after 6h
+or when everyone leaves; that is intended, a jam is ephemeral.
+
+Playing from Android: open the **Jam** tab and enter the code. Hosting stays
+on web (a phone that hosts would end the party when the app is swiped away).
 
 ## Quickstart
 

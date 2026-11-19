@@ -1,4 +1,4 @@
-import { Home, Library, Search } from 'lucide-react';
+import { Home, Library, Radio, Search } from 'lucide-react';
 import type { Page } from './Sidebar';
 
 export function MobileNav({
@@ -21,6 +21,10 @@ export function MobileNav({
       <button className={page === 'library' ? 'active' : ''} onClick={() => onNavigate('library')}>
         <Library size={22} />
         <span>Library</span>
+      </button>
+      <button className={page === 'jam' ? 'active' : ''} onClick={() => onNavigate('jam')}>
+        <Radio size={22} />
+        <span>Jam</span>
       </button>
     </nav>
   );

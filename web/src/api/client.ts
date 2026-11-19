@@ -1,4 +1,4 @@
-import type { Playlist, Track } from './types';
+import type { JamState, Playlist, Track } from './types';
 import { DEMO_PLAYLISTS, DEMO_TRACKS } from '../data/demo';
 import { fetchWithAdBlock } from '../adblock/blocker';
 
@@ -83,4 +83,86 @@ export async function getTrack(id: string): Promise<Track | null> {
  */
 export function streamUrl(track: Track): string {
   return `${API_BASE}/api/stream/${encodeURIComponent(track.id)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Song radio
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask the Worker for "what should play after this song" — same artist / same
+ * vibe, never the seed and never anything already played this session.
+ * Returns [] when the backend can't help; the player then falls back to the
+ * locally loaded catalog (with the same no-repeat rules applied client-side).
+ */
+export async function getRadio(
+  seed: Track,
+  exclude: string[],
+  limit = 12,
+): Promise<Track[]> {
+  const params = new URLSearchParams({
+    seedId: seed.id,
+    title: seed.title,
+    artist: seed.artist,
+    limit: String(limit),
+  });
+  if (exclude.length) params.set('exclude', exclude.slice(-40).join(','));
+  try {
+    return await apiFetch<Track[]>(`/api/radio?${params.toString()}`);
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Muzii Jam (shared listening rooms)
+// ---------------------------------------------------------------------------
+
+export interface JamSession {
+  state: JamState;
+  token: string;
+}
+
+async function jamPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetchWithAdBlock(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error ?? `jam request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export async function createJam(name: string): Promise<JamSession> {
+  const data = await jamPost<{ hostToken: string; code: string; state: JamState }>(
+    '/api/jam',
+    { name },
+  );
+  return { token: data.hostToken, state: data.state };
+}
+
+export async function joinJam(code: string, name: string): Promise<JamSession> {
+  const data = await jamPost<{ token: string; state: JamState }>(
+    `/api/jam/${code}/join`,
+    { name },
+  );
+  return { token: data.token, state: data.state };
+}
+
+export async function getJam(code: string, token?: string | null): Promise<JamState> {
+  const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+  const res = await fetchWithAdBlock(`${API_BASE}/api/jam/${code}${qs}`);
+  if (!res.ok) throw new Error('jam-not-found');
+  return (await res.json()) as JamState;
+}
+
+export async function jamAction<T = JamState>(
+  code: string,
+  action: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  return jamPost<T>(`/api/jam/${code}/${action}`, body);
 }
