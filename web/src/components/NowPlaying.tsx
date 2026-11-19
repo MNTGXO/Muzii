@@ -1,7 +1,8 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import {
   AlertTriangle,
   ChevronDown,
+  Heart,
   ListMusic,
   Loader2,
   Pause,
@@ -13,8 +14,10 @@ import {
   SkipBack,
   SkipForward,
   SkipForward as NextIcon,
+  ThumbsDown,
 } from 'lucide-react';
 import { usePlayer } from '../player/PlayerContext';
+import { useTaste } from '../taste/TasteContext';
 import { Artwork } from './Artwork';
 import { formatTime } from '../utils/format';
 
@@ -26,6 +29,15 @@ export function NowPlaying({
   onOpenQueue?: () => void;
 }) {
   const p = usePlayer();
+  const { isLiked, isDisliked, toggleLike, toggleDislike } = useTaste();
+  // One-shot pulse so a tap is acknowledged on a phone you aren't looking at.
+  const [pulse, setPulse] = useState<'like' | 'dislike' | null>(null);
+
+  useEffect(() => {
+    if (!pulse) return;
+    const timer = setTimeout(() => setPulse(null), 420);
+    return () => clearTimeout(timer);
+  }, [pulse]);
 
   // Escape closes the sheet (desktop).
   useEffect(() => {
@@ -68,11 +80,44 @@ export function NowPlaying({
       </div>
 
       <div className="np-meta">
-        <h2>{p.current.title}</h2>
-        <p>
-          {p.current.artist}
-          {p.current.album ? ` — ${p.current.album}` : ''}
-        </p>
+        <div className="np-title-row">
+          <h2>{p.current.title}</h2>
+          {/*
+            Like / unlike lives here, beside the title, the way Apple Music
+            does it. Until now the only way to rate a song was to open the
+            queue and find it in the list - the one screen where you are
+            actually looking at the track had no controls for it at all.
+            One button, two states: tap again to un-like.
+          */}
+          <button
+            className={`np-like${isLiked(p.current.id) ? ' on' : ''}${pulse === 'like' ? ' pulse' : ''}`}
+            onClick={() => {
+              toggleLike(p.current!);
+              setPulse('like');
+            }}
+            aria-pressed={isLiked(p.current.id)}
+            aria-label={isLiked(p.current.id) ? 'Unlike' : 'Like'}
+          >
+            <Heart size={26} fill={isLiked(p.current.id) ? 'currentColor' : 'none'} />
+          </button>
+        </div>
+        <div className="np-sub-row">
+          <p>
+            {p.current.artist}
+            {p.current.album ? ` — ${p.current.album}` : ''}
+          </p>
+          <button
+            className={`np-dislike${isDisliked(p.current.id) ? ' on' : ''}${pulse === 'dislike' ? ' pulse' : ''}`}
+            onClick={() => {
+              toggleDislike(p.current!);
+              setPulse('dislike');
+            }}
+            aria-pressed={isDisliked(p.current.id)}
+            aria-label={isDisliked(p.current.id) ? 'Stop disliking' : 'Dislike'}
+          >
+            <ThumbsDown size={18} fill={isDisliked(p.current.id) ? 'currentColor' : 'none'} />
+          </button>
+        </div>
       </div>
 
       {p.error && (

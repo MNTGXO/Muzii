@@ -42,7 +42,7 @@ function Shell() {
   const [showQueue, setShowQueue] = useState(false);
   const [catalog, setCatalog] = useState<Track[]>([]);
   const player = usePlayer();
-  const { taste, needsOnboarding } = useTaste();
+  const { taste, needsOnboarding, notePlayed } = useTaste();
 
   // Keep the player's radio requests in step with the taste cookie. This is
   // what makes a dislike stick: every later station excludes it.
@@ -50,6 +50,17 @@ function Shell() {
     player.setTaste(taste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taste]);
+
+  // Every completed listen is logged to the taste profile, so the home feed
+  // can surface what this listener actually plays instead of the first N
+  // tracks of the catalog.
+  useEffect(() => {
+    player.setOnPlayed(notePlayed);
+    return () => player.setOnPlayed(null);
+    // `player` is a fresh object each render; setOnPlayed only writes a ref,
+    // so re-registering is a no-op rather than a render loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notePlayed]);
 
   // Fetch the catalog scoped to the languages chosen at onboarding. Search
   // stays global, so looking something up always works.

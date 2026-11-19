@@ -68,6 +68,11 @@ interface PlayerContextValue {
    * can exclude disliked songs and lean towards liked artists.
    */
   setTaste: (taste: TasteSnapshot) => void;
+  /**
+   * Register what to do when a track is actually listened to. Wired once in
+   * App to the taste store's play log.
+   */
+  setOnPlayed: (fn: ((track: Track) => void) | null) => void;
   /** Disliked ids — filtered out of every queue before it is shown. */
   disliked: string[];
 }
@@ -173,6 +178,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
    * UI can react to dislikes.
    */
   const tasteRef = useRef<TasteSnapshot | null>(null);
+  /**
+   * Called once per completed listen, so the home feed can show what this
+   * listener actually plays. Held in a ref because the audio listeners are
+   * registered once and would otherwise capture a stale callback.
+   */
+  const onPlayedRef = useRef<((track: Track) => void) | null>(null);
   const [disliked, setDisliked] = useState<string[]>([]);
   /** Guards against several `ended`/`next` events all fetching radio at once. */
   const extendLock = useRef(false);
@@ -186,6 +197,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const setCatalog = useCallback((tracks: Track[]) => {
     catalogRef.current = tracks;
+  }, []);
+
+  /**
+   * Register the "a track finished" callback (App wires this to the play log
+   * in TasteContext). Never triggers a render, so it can't fight the taste
+   * effect that calls setTaste on every profile change.
+   */
+  const setOnPlayed = useCallback((fn: ((track: Track) => void) | null) => {
+    onPlayedRef.current = fn;
+  }, []);
+
+  /** Count a listen, but only for a track that actually got heard. */
+  const noteListened = useCallback((track: Track, secondsHeard: number) => {
+    // A track skipped in the first few seconds is not a listen. Using the
+    // real duration when known keeps a 30s interlude from needing 30s.
+    const duration = Number.isFinite(track.durationSec) ? track.durationSec : 0;
+    const needed = duration > 0 ? Math.min(30, Math.max(8, duration * 0.5)) : 15;
+    if (secondsHeard < needed) return;
+    onPlayedRef.current?.(track);
   }, []);
 
   const setTaste = useCallback((taste: TasteSnapshot) => {
@@ -336,6 +366,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onMeta = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
     const onEnded = () => {
       const { queue: q, index: i, repeat: rp } = stateRef.current;
+      // A completed track is the strongest possible signal - log it before
+      // advancing, while `stateRef` still points at the track that just ended.
+      const finished = q[i];
+      if (finished) noteListened(finished, Number.isFinite(audio.duration) ? audio.duration : 0);
       if (rp === 'one') {
         audio.currentTime = 0;
         void audio.play().catch(() => undefined);
@@ -778,6 +812,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       retry,
       setCatalog,
       setTaste,
+      setOnPlayed,
       disliked,
     }),
     [
@@ -812,6 +847,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       retry,
       setCatalog,
       setTaste,
+      setOnPlayed,
       disliked,
     ],
   );

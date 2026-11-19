@@ -11,6 +11,7 @@ import {
   applyTaste,
   loadTaste,
   markOnboarded,
+  recordPlay,
   setLanguages,
   type TasteAction,
   type TasteSnapshot,
@@ -25,6 +26,11 @@ interface TasteContextValue {
   /** Quick toggle used by the row buttons. */
   toggleLike: (track: Track) => void;
   toggleDislike: (track: Track) => void;
+  /**
+   * Count one completed listen. Drives "Recently played", "On repeat" and
+   * "Your top songs" on the home feed. Safe to call once per track end.
+   */
+  notePlayed: (track: Track) => void;
   /** Onboarding: which languages the home feed should use. */
   chooseLanguages: (lang: string[]) => void;
   finishOnboarding: () => void;
@@ -65,6 +71,14 @@ export function TasteProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const notePlayed = useCallback((track: Track) => {
+    // Repeating the same track must not double-count, and the player only
+    // calls this once per completed play anyway. Guard against a track with
+    // no id (demo placeholders) rather than writing junk into the log.
+    if (!track?.id) return;
+    setTaste((prev) => recordPlay(prev, track));
+  }, []);
+
   const chooseLanguages = useCallback((lang: string[]) => {
     setTaste((prev) => setLanguages(prev, lang));
   }, []);
@@ -81,11 +95,22 @@ export function TasteProvider({ children }: { children: ReactNode }) {
       rate,
       toggleLike,
       toggleDislike,
+      notePlayed,
       chooseLanguages,
       finishOnboarding,
       needsOnboarding: !taste.onboarded,
     }),
-    [taste, isLiked, isDisliked, rate, toggleLike, toggleDislike, chooseLanguages, finishOnboarding],
+    [
+      taste,
+      isLiked,
+      isDisliked,
+      rate,
+      toggleLike,
+      toggleDislike,
+      notePlayed,
+      chooseLanguages,
+      finishOnboarding,
+    ],
   );
 
   return <TasteContext.Provider value={value}>{children}</TasteContext.Provider>;

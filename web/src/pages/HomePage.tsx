@@ -1,11 +1,32 @@
 import { useEffect, useState } from 'react';
-import { Play, Radio, Sparkles, Users } from 'lucide-react';
+import { Flame, Play, Radio, Sparkles, Users } from 'lucide-react';
 import { getCatalogForLanguages, getPlaylists } from '../api/client';
 import { useTaste } from '../taste/TasteContext';
+import { recentlyPlayed, topPlayed, type PlayEntry } from '../taste/store';
 import type { Playlist, Track } from '../api/types';
 import { usePlayer } from '../player/PlayerContext';
 import { TrackRow } from '../components/TrackRow';
 import { Artwork } from '../components/Artwork';
+
+/**
+ * The play log stores lean records (id/title/artist/artwork) rather than whole
+ * tracks, so it fits in a cookie. The player needs a Track, so rebuild one.
+ * streamUrl stays empty: PlayerContext resolves playback through
+ * /api/stream/<id>, which is the only path that works for provider ids.
+ */
+function entryToTrack(entry: PlayEntry): Track {
+  return {
+    id: entry.id,
+    title: entry.title,
+    artist: entry.artist,
+    album: '',
+    durationSec: 0,
+    streamUrl: '',
+    artworkUrl: entry.artworkUrl,
+    gradientSeed: [...entry.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360,
+    ...(entry.language ? { language: entry.language } : {}),
+  };
+}
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -25,7 +46,7 @@ export function HomePage({
   const [tracks, setTracks] = useState<Track[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
-  const { playQueue, current } = usePlayer();
+  const { playQueue, current, startRadio } = usePlayer();
   const { taste } = useTaste();
 
   // The feed is scoped to the languages picked at onboarding. This page used
@@ -56,8 +77,20 @@ export function HomePage({
       ? tracks.filter((t) => featured.trackIds.includes(t.id))
       : [];
 
-  const recent = tracks.slice(0, 8);
-  const topTracks = tracks.slice(0, 12);
+  /*
+   * These two shelves used to be `tracks.slice(0, 8)` and `tracks.slice(0, 12)`
+   * - the first eight and twelve tracks of the language catalog. The labels
+   * lied ("Recently played" showed songs you had never played), and the two
+   * shelves showed the same songs, since one was a prefix of the other.
+   *
+   * They are now driven by the play log in the taste cookie: "Recently
+   * played" by recency, "Your top songs" by play count.
+   */
+  const played = recentlyPlayed(taste, 8);
+  const top = topPlayed(taste, 12);
+
+  /** Candidate fallback for a cold profile: the language feed itself. */
+  const suggestion = tracks.slice(0, 12);
 
   return (
     <div className="page">
@@ -119,30 +152,72 @@ export function HomePage({
         </span>
       </section>
 
-      {recent.length > 0 && (
+      {played.length > 0 && (
         <section>
           <h2 className="section-title">Recently played</h2>
           <div className="quick-grid">
-            {recent.map((t) => {
-              const active = current?.id === t.id;
+            {played.map((entry) => {
+              const active = current?.id === entry.id;
               return (
                 <button
-                  key={t.id}
+                  key={entry.id}
                   className={`quick-card${active ? ' active' : ''}`}
                   onClick={() => {
-                    const at = recent.findIndex((r) => r.id === t.id);
-                    playQueue(recent, at, 'manual');
+                    // Resume this song and keep the "recent" lane queued
+                    // behind it, so the next tap is not a random catalog song.
+                    const at = played.findIndex((r) => r.id === entry.id);
+                    playQueue(played.map(entryToTrack), Math.max(at, 0), 'manual');
                   }}
                 >
-                  <Artwork track={t} size={48} radius={10} />
+                  <Artwork track={entryToTrack(entry)} size={48} radius={10} />
                   <span className="quick-meta">
-                    <span className="quick-title">{t.title}</span>
-                    <span className="quick-artist">{t.artist}</span>
+                    <span className="quick-title">{entry.title}</span>
+                    <span className="quick-artist">{entry.artist}</span>
                   </span>
                 </button>
               );
             })}
           </div>
+        </section>
+      )}
+
+      {/*
+        "On repeat" - the station built from the songs this listener keeps
+        coming back to. Tapping it plays the most-played song and lets the
+        radio engine continue in that feel, which is what "play that kind of
+        song" means in practice.
+      */}
+      {top.length > 0 && (
+        <section>
+          <h2 className="section-title">
+            <Flame size={16} /> On repeat
+          </h2>
+          <button
+            className="repeat-banner"
+            onClick={() => {
+              const first = entryToTrack(top[0]);
+              playQueue(top.map(entryToTrack), 0, 'radio');
+              startRadio(first);
+            }}
+          >
+            <span className="repeat-banner-art" aria-hidden>
+              {top.slice(0, 3).map((entry, i) => (
+                <span key={entry.id} className="repeat-banner-art-card" style={{ ['--i' as string]: i }}>
+                  <Artwork track={entryToTrack(entry)} size={54} radius={10} />
+                </span>
+              ))}
+            </span>
+            <span className="repeat-banner-text">
+              <strong>{top[0].title}</strong>
+              <span>
+                Your most played — {top[0].count}{' '}
+                {top[0].count === 1 ? 'play' : 'plays'} · keeps playing this kind of song
+              </span>
+            </span>
+            <span className="repeat-banner-play" aria-hidden>
+              <Play size={18} />
+            </span>
+          </button>
         </section>
       )}
 
@@ -166,15 +241,35 @@ export function HomePage({
         </div>
       </section>
 
-      {topTracks.length > 0 && (
+      {top.length > 0 ? (
         <section>
-          <h2 className="section-title">Top Tracks</h2>
+          <h2 className="section-title">Your top songs</h2>
           <div className="track-list">
-            {topTracks.map((t, i) => (
-              <TrackRow key={t.id} track={t} context={topTracks} index={i} />
+            {top.map((entry, i) => (
+              <TrackRow
+                key={entry.id}
+                track={entryToTrack(entry)}
+                context={top.map(entryToTrack)}
+                index={i}
+              />
             ))}
           </div>
         </section>
+      ) : (
+        suggestion.length > 0 && (
+          <section>
+            <h2 className="section-title">Start here</h2>
+            <p className="section-hint">
+              Play a few songs and this becomes your own — top songs, artists and an
+              On repeat station follow what you actually listen to.
+            </p>
+            <div className="track-list">
+              {suggestion.map((t, i) => (
+                <TrackRow key={t.id} track={t} context={suggestion} index={i} />
+              ))}
+            </div>
+          </section>
+        )
       )}
     </div>
   );

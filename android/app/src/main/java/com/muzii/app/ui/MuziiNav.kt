@@ -32,6 +32,7 @@ import com.muzii.app.ui.screens.JamScreen
 import com.muzii.app.ui.screens.NowPlayingScreen
 import com.muzii.app.ui.screens.OnboardingScreen
 import com.muzii.app.ui.screens.QueueScreen
+import com.muzii.app.data.taste.PlayLog
 import com.muzii.app.ui.screens.PlaylistScreen
 import com.muzii.app.ui.screens.SearchScreen
 import com.muzii.app.ui.theme.SurfaceDark
@@ -104,6 +105,8 @@ fun MuziiNav(
                         onNext = { PlayerManager.next() },
                         onPrev = { PlayerManager.prev() },
                         onOpen = { showNowPlaying = true },
+                        liked = likedIds.contains(track.id),
+                        onToggleLike = { onToggleLike(track) },
                     )
                 }
                 NavigationBar(containerColor = SurfaceDark) {
@@ -174,6 +177,11 @@ fun MuziiNav(
                         onToggleDislike = onToggleDislike,
                         offline = offline,
                         onRetry = onRetry,
+                        // Read straight from PlayLog: it changes as tracks
+                        // finish, and this composable already recomposes on
+                        // every player state change.
+                        recentlyPlayed = PlayLog.recentlyPlayedTracks(8),
+                        topPlayed = PlayLog.topPlayedTracks(12),
                     )
                     Tab.SEARCH -> SearchScreen(
                         query = searchQuery,
@@ -226,6 +234,10 @@ fun MuziiNav(
                 showNowPlaying = false
                 showQueue = true
             },
+            liked = likedIds.contains(currentTrack.id),
+            disliked = dislikedIds.contains(currentTrack.id),
+            onToggleLike = { onToggleLike(currentTrack) },
+            onToggleDislike = { onToggleDislike(currentTrack) },
         )
     }
 }

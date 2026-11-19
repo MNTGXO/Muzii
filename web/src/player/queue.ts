@@ -138,6 +138,51 @@ export function sameLanguage(tracks: Track[], language?: string): Track[] {
  * Fallback radio when the backend can't be reached: prefer the same artist,
  * then the same catalog neighbourhood, and always honour the no-repeat rule.
  */
+/** Energy cues - mirrors energyOf() in worker/src/radio.ts. */
+// 'intro'/'theme' are deliberately absent: a title theme is as often a slow
+// instrumental as a banger, and duration already catches long cues.
+const HIGH_ENERGY = [
+  'remix', 'remixed', 'dj', 'club', 'edm', 'dance', 'mashup', 'mix', 'party',
+  'banger', 'trance', 'techno', 'house', 'dubstep', 'trap', 'hardstyle',
+  'item song', 'mass', 'beat drop', 'drop', 'workout',
+];
+const LOW_ENERGY = [
+  'melody', 'melodious', 'unplugged', 'acoustic', 'lullaby', 'sad', 'mellow',
+  'soft', 'slow', 'romantic', 'love', 'soulful', 'pathos', 'melancholy',
+  'instrumental', 'piano', 'strings', 'flute', 'bhajan', 'devotional',
+];
+
+/**
+ * 0 = melody, 1 = club/DJ. `undefined` when there is no cue, so an unknown
+ * track is never punished for being unknown.
+ */
+export function energyOf(track: {
+  title: string;
+  album?: string;
+  durationSec?: number;
+}): number | undefined {
+  const hay = `${track.title} ${track.album ?? ''}`.toLowerCase();
+  let high = 0;
+  let low = 0;
+  for (const cue of HIGH_ENERGY) if (hay.includes(cue)) high += 1;
+  for (const cue of LOW_ENERGY) if (hay.includes(cue)) low += 1;
+  const duration = track.durationSec ?? 0;
+  if (duration >= 480) high += 2;
+  else if (duration > 0 && duration <= 150) low += 1;
+  if (high === 0 && low === 0) return undefined;
+  if (high > low) return Math.min(1, 0.75 + high * 0.05);
+  if (low > high) return Math.max(0, 0.2 - low * 0.03);
+  return 0.5;
+}
+
+/** How far apart two tracks are in feel: 0 = same lane, 1 = opposite. */
+export function energyGap(a: Track, b: Track): number | undefined {
+  const ea = energyOf(a);
+  const eb = energyOf(b);
+  if (ea === undefined || eb === undefined) return undefined;
+  return Math.abs(ea - eb);
+}
+
 export function localRadio(
   seed: Track,
   catalog: Track[],
@@ -147,10 +192,20 @@ export function localRadio(
   const seedArtist = (seed.artist.split(/,|&|feat\.?|ft\.?/i)[0] ?? seed.artist)
     .trim()
     .toLowerCase();
-  const sameArtist = catalog.filter(
+  // Keep the feel even on the fallback path: a melody must not be followed by
+  // a DJ remix just because it shares an artist. Tracks far from the seed's
+  // energy are dropped when enough in-lane songs remain.
+  const sameLane = (t: Track) => {
+    const gap = energyGap(seed, t);
+    return gap === undefined || gap < 0.6;
+  };
+  const inLane = catalog.filter(sameLane);
+  const pool = inLane.length >= limit ? inLane : catalog;
+
+  const sameArtist = pool.filter(
     (t) => t.artist.toLowerCase().includes(seedArtist) && seedArtist.length > 1,
   );
-  const rest = catalog.filter((t) => !sameArtist.includes(t));
+  const rest = pool.filter((t) => !sameArtist.includes(t));
   // Interleave so a single-artist catalog doesn't block the rest.
   const mixed: Track[] = [];
   for (let i = 0; i < Math.max(sameArtist.length, rest.length); i++) {

@@ -13,6 +13,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.muzii.app.data.model.Track
+import com.muzii.app.data.taste.PlayLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -152,6 +153,14 @@ object PlayerManager {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // Log the track that just finished, before the index moves. The
+            // guard inside logListen() ignores a skip that never really played,
+            // so this is safe on both "ended" and manual "next".
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
+            ) {
+                _queue.value.getOrNull(_currentIndex.value)?.let { logListen(it) }
+            }
             _currentIndex.value = controller?.currentMediaItemIndex ?: 0
             _error.value = null
             // Top up before we actually hit the end, so playback is seamless.
@@ -291,6 +300,22 @@ object PlayerManager {
     private fun markPlayed(track: Track) {
         playedIds.add(track.id)
         playedKeys.add(keyOf(track))
+    }
+
+    /**
+     * Count a *completed* listen for the home screen's "Recently played" and
+     * "Your top songs" shelves. Deliberately separate from markPlayed(), which
+     * fires on every track start for the no-repeat rule - counting that here
+     * would let a skip inflate the play count.
+     */
+    private fun logListen(track: Track) {
+        // A track skipped in the first few seconds is not a listen.
+        val needed = when {
+            track.durationSec <= 0L -> 15_000L
+            else -> minOf(30_000L, maxOf(8_000L, track.durationSec * 1000L / 2))
+        }
+        if (_positionMs.value < needed) return
+        PlayLog.record(track)
     }
 
     fun toggle() {

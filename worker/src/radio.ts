@@ -133,6 +133,57 @@ function nearEra(a?: number, b?: number, span = 12): boolean {
   return Math.abs(a - b) <= span;
 }
 
+/**
+ * How energetic a track is, from 0 (melody/ballad) to 1 (club/DJ banger).
+ *
+ * Why this exists: the catalog gives us language, composer, artist and year —
+ * nothing that distinguishes a melody from a remix. A Harris Jayaraj melody
+ * and a Harris Jayaraj DJ remix therefore scored *identically* (same composer
+ * +55, same artist +70, same language +100, same era +20), so a station could
+ * legally answer "melody" with a thumping remix. That is the "I played a
+ * melody, don't give me a DJ next" complaint, and no amount of re-weighting
+ * the existing signals could fix it: there was no axis to weigh.
+ *
+ * JioSaavn exposes no genre, so this is derived from the strongest cue we do
+ * have - the words in the title and album. It is a heuristic, deliberately
+ * coarse, and returns `undefined` when there is no cue at all so an unknown
+ * track is treated as compatible rather than guessed at.
+ */
+// 'intro'/'theme' are deliberately absent: a title theme is as often a slow
+// instrumental as a banger, and duration already catches long cues.
+const HIGH_ENERGY = [
+  'remix', 'remixed', 'dj', 'club', 'edm', 'dance', 'mashup', 'mix', 'party',
+  'banger', 'trance', 'techno', 'house', 'dubstep', 'trap', 'hardstyle',
+  'item song', 'mass', 'beat drop', 'drop', 'workout',
+];
+const LOW_ENERGY = [
+  'melody', 'melodious', 'unplugged', 'acoustic', 'lullaby', 'sad', 'mellow',
+  'soft', 'slow', 'romantic', 'love', 'soulful', 'pathos', 'melancholy',
+  'instrumental', 'piano', 'strings', 'flute', 'bhajan', 'devotional',
+];
+
+export function energyOf(track: {
+  title: string;
+  album?: string;
+  durationSec?: number;
+}): number | undefined {
+  const hay = `${track.title} ${track.album ?? ''}`.toLowerCase();
+  let high = 0;
+  let low = 0;
+  for (const cue of HIGH_ENERGY) if (hay.includes(cue)) high += 1;
+  for (const cue of LOW_ENERGY) if (hay.includes(cue)) low += 1;
+
+  // A long track is usually a DJ set / continuous mix, not a song.
+  const duration = track.durationSec ?? 0;
+  if (duration >= 480) high += 2;
+  else if (duration > 0 && duration <= 150) low += 1;
+
+  if (high === 0 && low === 0) return undefined;
+  if (high > low) return Math.min(1, 0.75 + high * 0.05);
+  if (low > high) return Math.max(0, 0.2 - low * 0.03);
+  return 0.5;
+}
+
 export interface TasteProfile {
   /** Disliked track ids - never returned. */
   avoid?: string[];
@@ -158,6 +209,8 @@ export interface RadioRequest {
 }
 
 interface Seed {
+  /** Seed title, needed to work out the station's energy. */
+  title: string;
   artist: string;
   language?: string;
   composer?: string;
@@ -176,6 +229,17 @@ function scoreTrack(
   lovedComposers: Set<string>,
 ): number {
   let score = 0;
+
+  // 0. Energy - "keep the feel". Without this a melody and a DJ remix of the
+  //    same song by the same composer scored identically.
+  const seedEnergy = energyOf({ title: seed.title });
+  const trackEnergy = energyOf(track);
+  if (seedEnergy !== undefined && trackEnergy !== undefined) {
+    const gap = Math.abs(seedEnergy - trackEnergy);
+    if (gap >= 0.6) score -= 90;
+    else if (gap >= 0.3) score -= 30;
+    else score += 15;
+  }
 
   // 1. Language - the single most important "don't jump languages" guard.
   if (sameLang(track.language, seed.language)) score += 100;
@@ -272,6 +336,7 @@ export async function buildRadio(
   }
 
   const seed: Seed = {
+    title: seedTitle,
     artist,
     language: seedLanguage,
     composer: seedComposer,
