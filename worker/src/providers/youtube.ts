@@ -141,8 +141,9 @@ export class YouTubeMusicProvider implements MusicProvider {
     }
     const seen = new Set<string>();
     const tracks: Track[] = [];
-    for (const q of CATALOG_QUERIES) {
-      for (const track of await this.search(q)) {
+    const results = await Promise.all(CATALOG_QUERIES.map((q) => this.search(q)));
+    for (const batch of results) {
+      for (const track of batch) {
         if (!seen.has(track.id)) {
           seen.add(track.id);
           tracks.push(track);
@@ -181,18 +182,14 @@ export class YouTubeMusicProvider implements MusicProvider {
       { id: 'yt-workout', title: 'Workout Energy', description: 'High-octane fuel for your session.', query: 'workout music', gradient: 'linear-gradient(135deg,#FF9F0A,#FF375F)' },
       { id: 'yt-focus', title: 'Focus Flow', description: 'Deep concentration, zero distractions.', query: 'lofi beats', gradient: 'linear-gradient(135deg,#64D2FF,#30D158)' },
     ];
-    const playlists: Playlist[] = [];
-    for (const def of defs) {
-      const tracks = await this.search(def.query);
-      playlists.push({
-        id: def.id,
-        title: def.title,
-        description: def.description,
-        trackIds: tracks.slice(0, 10).map((t) => t.id),
-        gradient: def.gradient,
-      });
-    }
-    return playlists;
+    const batches = await Promise.all(defs.map((def) => this.search(def.query)));
+    return defs.map((def, i) => ({
+      id: def.id,
+      title: def.title,
+      description: def.description,
+      trackIds: batches[i].slice(0, 10).map((t) => t.id),
+      gradient: def.gradient,
+    }));
   }
 
   async getLyrics(): Promise<string[]> {
