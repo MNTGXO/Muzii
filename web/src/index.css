@@ -559,19 +559,70 @@ input[type='range']::-moz-range-thumb {
   top: 0;
   right: 0;
   bottom: var(--player-h);
-  width: 360px;
+  width: 380px;
   max-width: 90vw;
   background: rgba(20, 20, 22, 0.96);
   backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 20px;
-  overflow-y: auto;
-  z-index: 40;
+  z-index: 45;
+  /* Flex column so the header stays put and only the list scrolls. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   animation: pop-in 0.28s var(--ease) both;
 }
-.queue-panel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.queue-panel header h3 { margin: 0; font-size: 18px; }
-.queue-panel header button { color: var(--text-2); display: grid; place-items: center; }
+
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 12px;
+  flex-shrink: 0;
+}
+
+.queue-head h3 {
+  margin: 0;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-head button {
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.queue-head button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * The scroll body. `min-height: 0` is the critical bit: inside a flex
+ * column, a child defaults to min-height:auto and refuses to shrink below
+ * its content, so overflow never kicks in and the tail of a long queue is
+ * unreachable. Same applies to `overscroll-behavior` on iOS.
+ */
+.queue-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 20px calc(20px + env(safe-area-inset-bottom));
+}
+
+.queue-scroll::-webkit-scrollbar { width: 8px; }
+.queue-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+.queue-scroll::-webkit-scrollbar-track { background: transparent; }
 .queue-note { color: var(--text-2); font-size: 13px; margin-top: 16px; }
 
 /* ---------- Now playing ---------- */
@@ -1170,6 +1221,8 @@ input[type='range']::-moz-range-thumb {
   .mobile-nav button.active { color: var(--apple-red-light); }
 
   /* Queue panel becomes a bottom sheet. */
+  /* Bottom sheet. The panel is a fixed-height flex column and only
+     `.queue-scroll` scrolls, so the whole queue is reachable by swiping. */
   .queue-panel {
     top: auto;
     left: 0;
@@ -1177,13 +1230,31 @@ input[type='range']::-moz-range-thumb {
     bottom: 0;
     width: auto;
     max-width: none;
-    max-height: 78dvh;
+    height: min(82dvh, 680px);
+    max-height: 82dvh;
     border-left: none;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 20px 20px 0 0;
-    padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+    padding: 0;
     animation: sheet-up 0.32s var(--ease) both;
   }
+  .queue-head { padding: 16px 16px 10px; }
+  .queue-scroll {
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  /* A visible grab handle makes the sheet feel native. */
+  .queue-head::before {
+    content: '';
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+  }
+  .queue-head { position: relative; padding-top: 20px; }
   /* Always show row actions on touch — hover is unavailable. */
   .track-row-actions, .queue-row-actions { opacity: 1; }
 
@@ -1262,4 +1333,221 @@ input[type='range']::-moz-range-thumb {
 /* Print is not a use case, but keep it from looking broken. */
 @media print {
   .sidebar, .player-bar, .mobile-nav, .queue-panel, .now-playing { display: none; }
+}
+
+/* ==========================================================================
+   Taste: like / dislike
+   --------------------------------------------------------------------------
+   Heart = "more like this" (pulls the artist and composer up the station).
+   Thumbs down = "never again" (removed from the feed, skipped immediately).
+   Both are mutually exclusive, so the two never look active at once.
+   ========================================================================== */
+
+.row-action.like.on { color: #ff375f; }
+.row-action.dislike.on { color: #64d2ff; }
+
+/* A disliked row stays visible (so you can undo) but is clearly muted. */
+.track-row.disliked .track-meta,
+.queue-row.disliked .track-meta { opacity: 0.45; }
+.track-row.disliked .track-title,
+.queue-row.disliked .track-title { text-decoration: line-through; }
+.track-row.liked .track-title { color: #ff6482; }
+
+.queue-taste {
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.queue-taste:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.queue-taste.like.on { color: #ff375f; }
+.queue-taste.dislike.on { color: #64d2ff; }
+
+/* Small language tag next to the artist name. */
+.track-lang {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.hide-sm { display: inline; }
+
+/* ==========================================================================
+   Onboarding — pick your languages
+   ========================================================================== */
+
+.onboarding {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 5vw, 56px) clamp(16px, 4vw, 40px);
+  background:
+    radial-gradient(90% 70% at 15% 0%, rgba(250, 45, 72, 0.22), transparent 60%),
+    radial-gradient(80% 70% at 90% 10%, rgba(191, 90, 242, 0.18), transparent 62%),
+    #000;
+  overflow-y: auto;
+}
+
+.onboarding-inner {
+  width: 100%;
+  max-width: 620px;
+  margin: auto;
+  text-align: center;
+}
+
+.onboarding-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 20px;
+}
+
+.onboarding h1 {
+  margin: 0 0 12px;
+  font-size: clamp(28px, 6.4vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.onboarding-sub {
+  margin: 0 auto 28px;
+  max-width: 46ch;
+  color: var(--text-2);
+  font-size: clamp(13.5px, 3.4vw, 15.5px);
+  line-height: 1.6;
+}
+
+.lang-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 26px;
+  text-align: left;
+}
+
+.lang-chip {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s var(--ease);
+}
+
+.lang-chip:hover {
+  background: rgba(255, 255, 255, 0.09);
+  transform: translateY(-1px);
+}
+
+.lang-chip.active {
+  border-color: var(--apple-red-light);
+  background: rgba(250, 45, 72, 0.15);
+}
+
+.lang-emoji { font-size: 19px; line-height: 1; }
+
+.lang-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+
+.lang-native {
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lang-label { font-size: 11.5px; color: var(--text-2); }
+
+.lang-check {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--apple-red-light);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-primary,
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  border-radius: 999px;
+  transition: opacity 0.16s, transform 0.16s var(--ease);
+}
+
+.btn-primary {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 22px;
+  background: var(--apple-red-light);
+  color: #fff;
+  font-size: 15px;
+}
+
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary:not(:disabled):hover { transform: translateY(-1px); }
+
+.btn-ghost {
+  padding: 9px 14px;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.btn-ghost:hover { color: var(--text); }
+
+.onboarding-note {
+  margin-top: 20px;
+  color: var(--text-3, #6e6e73);
+  font-size: 12px;
+}
+
+@media (max-width: 430px) {
+  .lang-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .lang-chip { padding: 11px 12px; gap: 9px; }
+  .lang-emoji { font-size: 17px; }
+  .hide-sm { display: none; }
+}
+
+/* On a short landscape phone the onboarding must scroll, not clip. */
+@media (max-height: 560px) {
+  .onboarding { align-items: flex-start; }
+  .onboarding h1 { font-size: 26px; }
+  .onboarding-sub { margin-bottom: 18px; }
+  .onboarding-badge { margin-bottom: 12px; }
 }

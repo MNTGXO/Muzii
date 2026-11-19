@@ -50,6 +50,11 @@ fun HomeScreen(
     onOpenPlaylist: (Playlist) -> Unit,
     onStartRadio: (Track) -> Unit = {},
     onOpenJam: () -> Unit = {},
+    onOpenQueue: () -> Unit = {},
+    likedIds: List<String> = emptyList(),
+    dislikedIds: List<String> = emptyList(),
+    onToggleLike: (Track) -> Unit = {},
+    onToggleDislike: (Track) -> Unit = {},
 ) {
     // Responsive card sizing: two-and-a-bit cards on a phone, more on a
     // tablet or in landscape, instead of one fixed 150.dp everywhere.
@@ -219,6 +224,10 @@ fun HomeScreen(
                 isPlaying = isPlaying,
                 onClick = { onPlayTrack(track, tracks) },
                 onStartRadio = { onStartRadio(track) },
+                isLiked = likedIds.contains(track.id),
+                isDisliked = dislikedIds.contains(track.id),
+                onToggleLike = { onToggleLike(track) },
+                onToggleDislike = { onToggleDislike(track) },
             )
         }
         item { Spacer(Modifier.height(120.dp)) }

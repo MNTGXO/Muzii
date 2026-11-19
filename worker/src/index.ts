@@ -115,7 +115,20 @@ export default {
 
       if (url.pathname === '/api/catalog') {
         const { value } = await withFallback(chain, (p) => p.getCatalog(), itemListIsEmpty);
-        return json(value);
+        // The listener's chosen languages scope the home feed. Search is
+        // deliberately NOT scoped: if you look something up you get it.
+        const languages = (url.searchParams.get('languages') ?? '')
+          .split(',')
+          .map((v) => v.trim().toLowerCase())
+          .filter(Boolean);
+        if (!languages.length) return json(value);
+        const scoped = value.filter(
+          (track) =>
+            !track.language || languages.some((l) => track.language?.includes(l)),
+        );
+        // Never return an empty feed: if the scope is too narrow (or the
+        // provider didn't tag languages), fall back to the full catalog.
+        return json(scoped.length ? scoped : value);
       }
 
       if (url.pathname === '/api/playlists') {
@@ -172,12 +185,31 @@ export default {
           .map((s) => s.trim())
           .filter(Boolean);
         const limit = Number(url.searchParams.get('limit') ?? 12);
+        const num = (key: string): number | undefined => {
+          const raw = url.searchParams.get(key);
+          if (!raw) return undefined;
+          const value = Number(raw);
+          return Number.isFinite(value) ? value : undefined;
+        };
+        const list = (key: string): string[] =>
+          (url.searchParams.get(key) ?? '')
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean);
         const tracks = await buildRadio(chain, {
           seedId,
           seedTitle,
           seedArtist,
           exclude,
           limit,
+          seedLanguage: url.searchParams.get('lang') ?? undefined,
+          seedComposer: url.searchParams.get('composer') ?? undefined,
+          seedYear: num('year'),
+          taste: {
+            avoid: list('avoid'),
+            loved: list('loved'),
+            language: url.searchParams.get('language') ?? undefined,
+          },
         });
         return json(tracks);
       }

@@ -98,6 +98,32 @@ function pickDownloadUrl(value: unknown): string | undefined {
   return typeof best?.url === 'string' ? best.url : undefined;
 }
 
+/**
+ * JioSaavn exposes a `language` field (lowercase, e.g. "malayalam"), and
+ * sometimes `year` and `music`/`composer`. They are the best "same feel"
+ * signals the catalog gives us, so surface them on the Track.
+ */
+function pickLanguage(song: any): string | undefined {
+  const raw = pickString(song?.language).trim().toLowerCase();
+  if (!raw) return undefined;
+  // The API sometimes returns "hindi,english" or "unknown".
+  const first = raw.split(/[,/|]/)[0]?.trim();
+  return first && first !== 'unknown' ? first : undefined;
+}
+
+function pickYear(song: any): number | undefined {
+  const raw = Number(song?.year ?? song?.releaseDate?.split?.('-')?.[0]);
+  return Number.isFinite(raw) && raw > 1900 && raw < 2100 ? raw : undefined;
+}
+
+function pickComposer(song: any): string | undefined {
+  const raw =
+    pickString(song?.music) ||
+    pickString(song?.composer) ||
+    pickString(song?.musicDirector);
+  return raw.trim() || undefined;
+}
+
 function toTrack(song: any): Track | null {
   const id: string | undefined = song?.id;
   const url = pickDownloadUrl(song?.downloadUrl) ?? pickDownloadUrl(song?.media_url);
@@ -118,6 +144,19 @@ function toTrack(song: any): Track | null {
     streamUrl: `jiosaavn://${id}`,
     artworkUrl: pickImage(song.image),
     gradientSeed: [...id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360,
+    ...(() => {
+      const language = pickLanguage(song);
+      const year = pickYear(song);
+      const composer = pickComposer(song);
+      // Only set the keys when known: keeps the JSON small (this is a
+      // 12KB-ish payload per search already) and lets clients treat
+      // `undefined` as "unknown" rather than "".
+      return {
+        ...(language ? { language } : {}),
+        ...(year ? { year } : {}),
+        ...(composer ? { composer } : {}),
+      };
+    })(),
   };
 }
 

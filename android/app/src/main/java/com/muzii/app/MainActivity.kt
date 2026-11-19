@@ -25,12 +25,21 @@ class MainActivity : ComponentActivity() {
                 val playlists by viewModel.playlists.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()
                 val searchResults by viewModel.searchResults.collectAsState()
+                val onboarded by viewModel.onboarded.collectAsState()
+                val likedIds by viewModel.likedIds.collectAsState()
+                val dislikedIds by viewModel.dislikedIds.collectAsState()
                 MuziiNav(
                     tracks = tracks,
                     playlists = playlists,
                     searchQuery = searchQuery,
                     searchResults = searchResults,
                     onQueryChange = viewModel::onQueryChange,
+                    onboarded = onboarded,
+                    onCompleteOnboarding = viewModel::completeOnboarding,
+                    likedIds = likedIds,
+                    dislikedIds = dislikedIds,
+                    onToggleLike = viewModel::toggleLike,
+                    onToggleDislike = viewModel::toggleDislike,
                 )
             }
         }

@@ -35,6 +35,10 @@ fun PlaylistScreen(
     onBack: () -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onStartRadio: (Track) -> Unit = {},
+    likedIds: List<String> = emptyList(),
+    dislikedIds: List<String> = emptyList(),
+    onToggleLike: (Track) -> Unit = {},
+    onToggleDislike: (Track) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -69,6 +73,10 @@ fun PlaylistScreen(
                     isPlaying = isPlaying,
                     onClick = { onPlayTrack(track, tracks) },
                     onStartRadio = { onStartRadio(track) },
+                    isLiked = likedIds.contains(track.id),
+                    isDisliked = dislikedIds.contains(track.id),
+                    onToggleLike = { onToggleLike(track) },
+                    onToggleDislike = { onToggleDislike(track) },
                 )
             }
             item { Spacer(Modifier.height(120.dp)) }

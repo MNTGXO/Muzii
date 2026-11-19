@@ -30,6 +30,8 @@ import com.muzii.app.ui.screens.HomeScreen
 import com.muzii.app.ui.screens.LibraryScreen
 import com.muzii.app.ui.screens.JamScreen
 import com.muzii.app.ui.screens.NowPlayingScreen
+import com.muzii.app.ui.screens.OnboardingScreen
+import com.muzii.app.ui.screens.QueueScreen
 import com.muzii.app.ui.screens.PlaylistScreen
 import com.muzii.app.ui.screens.SearchScreen
 import com.muzii.app.ui.theme.SurfaceDark
@@ -49,9 +51,16 @@ fun MuziiNav(
     searchQuery: String,
     searchResults: List<Track>,
     onQueryChange: (String) -> Unit,
+    onboarded: Boolean = true,
+    onCompleteOnboarding: (List<String>) -> Unit = {},
+    likedIds: List<String> = emptyList(),
+    dislikedIds: List<String> = emptyList(),
+    onToggleLike: (Track) -> Unit = {},
+    onToggleDislike: (Track) -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     var showNowPlaying by remember { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
     var openPlaylist by remember { mutableStateOf<Playlist?>(null) }
 
     val queue by PlayerManager.queue.collectAsState()
@@ -71,6 +80,13 @@ fun MuziiNav(
 
     val playTrack: (Track, List<Track>) -> Unit = { track, ctx ->
         PlayerManager.playQueue(ctx, ctx.indexOf(track))
+    }
+
+    // First run: pick languages before the feed is built, so the home screen
+    // is never populated with the wrong ones.
+    if (!onboarded) {
+        OnboardingScreen(onDone = onCompleteOnboarding)
+        return
     }
 
     Scaffold(
@@ -132,6 +148,10 @@ fun MuziiNav(
                     onBack = { openPlaylist = null },
                     onPlayTrack = playTrack,
                     onStartRadio = { track -> PlayerManager.startRadio(track) },
+                    likedIds = likedIds,
+                    dislikedIds = dislikedIds,
+                    onToggleLike = onToggleLike,
+                    onToggleDislike = onToggleDislike,
                 )
             } else {
                 when (tab) {
@@ -144,6 +164,11 @@ fun MuziiNav(
                         onOpenPlaylist = { openPlaylist = it },
                         onStartRadio = { track -> PlayerManager.startRadio(track) },
                         onOpenJam = { tab = Tab.JAM },
+                        onOpenQueue = { showQueue = true },
+                        likedIds = likedIds,
+                        dislikedIds = dislikedIds,
+                        onToggleLike = onToggleLike,
+                        onToggleDislike = onToggleDislike,
                     )
                     Tab.SEARCH -> SearchScreen(
                         query = searchQuery,
@@ -153,6 +178,10 @@ fun MuziiNav(
                         onQueryChange = onQueryChange,
                         onPlayTrack = playTrack,
                         onStartRadio = { track -> PlayerManager.startRadio(track) },
+                        likedIds = likedIds,
+                        dislikedIds = dislikedIds,
+                        onToggleLike = onToggleLike,
+                        onToggleDislike = onToggleDislike,
                     )
                     Tab.LIBRARY -> LibraryScreen(
                         playlists = playlists,
@@ -162,6 +191,19 @@ fun MuziiNav(
                 }
             }
         }
+    }
+
+    if (showQueue) {
+        QueueScreen(
+            queue = queue,
+            index = currentIndex,
+            onJump = { PlayerManager.jumpTo(it) },
+            onClose = { showQueue = false },
+            likedIds = likedIds,
+            dislikedIds = dislikedIds,
+            onToggleLike = onToggleLike,
+            onToggleDislike = onToggleDislike,
+        )
     }
 
     if (showNowPlaying && currentTrack != null) {
@@ -175,6 +217,10 @@ fun MuziiNav(
             onPrev = { PlayerManager.prev() },
             onSeek = { PlayerManager.seekTo(it) },
             onClose = { showNowPlaying = false },
+            onOpenQueue = {
+                showNowPlaying = false
+                showQueue = true
+            },
         )
     }
 }

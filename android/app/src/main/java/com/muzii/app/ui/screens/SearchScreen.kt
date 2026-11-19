@@ -32,6 +32,10 @@ fun SearchScreen(
     onQueryChange: (String) -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onStartRadio: (Track) -> Unit = {},
+    likedIds: List<String> = emptyList(),
+    dislikedIds: List<String> = emptyList(),
+    onToggleLike: (Track) -> Unit = {},
+    onToggleDislike: (Track) -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -67,6 +71,10 @@ fun SearchScreen(
                     isPlaying = isPlaying,
                     onClick = { onPlayTrack(track, results) },
                     onStartRadio = { onStartRadio(track) },
+                    isLiked = likedIds.contains(track.id),
+                    isDisliked = dislikedIds.contains(track.id),
+                    onToggleLike = { onToggleLike(track) },
+                    onToggleDislike = { onToggleDislike(track) },
                 )
             }
             item { Spacer(Modifier.height(120.dp)) }

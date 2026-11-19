@@ -8,6 +8,16 @@ export interface Track {
   artworkUrl: string;
   /** Seed for client-side gradient artwork (Apple-Music style). */
   gradientSeed: number;
+  /**
+   * Spoken language of the song ("malayalam", "tamil", "hindi", ...).
+   * Optional: only providers that expose it fill it in, and the radio uses
+   * it to keep a station in one language instead of drifting.
+   */
+  language?: string;
+  /** Release year, when the provider knows it. Used as an era/mood signal. */
+  year?: number;
+  /** Music director / composer, when known — a strong "same feel" signal. */
+  composer?: string;
 }
 
 export interface Playlist {

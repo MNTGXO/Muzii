@@ -13,7 +13,12 @@ import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 interface MuziiApi {
-    @GET("api/catalog") suspend fun getCatalog(): List<Track>
+    /**
+     * Home feed. `languages` scopes it to the languages chosen at
+     * onboarding; an empty value returns the full catalog.
+     */
+    @GET("api/catalog")
+    suspend fun getCatalog(@Query("languages") languages: String = ""): List<Track>
 
     @GET("api/playlists") suspend fun getPlaylists(): List<Playlist>
 
@@ -33,6 +38,14 @@ interface MuziiApi {
         @Query("artist") artist: String,
         @Query("exclude") exclude: String,
         @Query("limit") limit: Int = 10,
+        // Seed metadata: what keeps the station in its language and era.
+        @Query("lang") language: String? = null,
+        @Query("composer") composer: String? = null,
+        @Query("year") year: Int? = null,
+        // Taste profile: disliked ids are never returned, liked ids are boosted.
+        @Query("avoid") avoid: String? = null,
+        @Query("loved") loved: String? = null,
+        @Query("language") prefLanguages: String? = null,
     ): List<Track>
 }
 

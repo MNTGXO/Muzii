@@ -11,7 +11,9 @@ import { LibraryPage } from './pages/LibraryPage';
 import { PlaylistPage } from './pages/PlaylistPage';
 import { JamPage } from './pages/JamPage';
 import { usePlayer } from './player/PlayerContext';
-import { getCatalog } from './api/client';
+import { getCatalogForLanguages } from './api/client';
+import { OnboardingPage } from './pages/OnboardingPage';
+import { TasteProvider, useTaste } from './taste/TasteContext';
 import type { Track } from './api/types';
 
 type View =
@@ -40,12 +42,21 @@ function Shell() {
   const [showQueue, setShowQueue] = useState(false);
   const [catalog, setCatalog] = useState<Track[]>([]);
   const player = usePlayer();
+  const { taste, needsOnboarding } = useTaste();
 
-  // Share the catalog with the player so local radio has something to pick
-  // from when the network endpoint is unavailable.
+  // Keep the player's radio requests in step with the taste cookie. This is
+  // what makes a dislike stick: every later station excludes it.
+  useEffect(() => {
+    player.setTaste(taste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taste]);
+
+  // Fetch the catalog scoped to the languages chosen at onboarding. Search
+  // stays global, so looking something up always works.
+  const langKey = taste.lang.join(',');
   useEffect(() => {
     let cancelled = false;
-    void getCatalog().then((tracks) => {
+    void getCatalogForLanguages(taste.lang).then((tracks) => {
       if (cancelled) return;
       setCatalog(tracks);
       player.setCatalog(tracks);
@@ -54,7 +65,7 @@ function Shell() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [langKey]);
 
   // Keep the URL and the view in sync (back/forward + share links work).
   useEffect(() => {
@@ -96,6 +107,11 @@ function Shell() {
     return () => window.removeEventListener('pointerdown', resume);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.buffering]);
+
+  // First run: ask which languages to build the feed from. Rendering it
+  // instead of the app (not on top of it) keeps the layout untouched and
+  // guarantees the feed is never built from the wrong languages.
+  if (needsOnboarding) return <OnboardingPage />;
 
   return (
     <div className="app">
@@ -144,8 +160,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <PlayerProvider>
-      <Shell />
-    </PlayerProvider>
+    <TasteProvider>
+      <PlayerProvider>
+        <Shell />
+      </PlayerProvider>
+    </TasteProvider>
   );
 }

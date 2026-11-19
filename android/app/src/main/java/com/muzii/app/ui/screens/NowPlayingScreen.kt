@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Track
 import com.muzii.app.ui.components.ArtworkBox
@@ -47,6 +49,8 @@ fun NowPlayingScreen(
     onPrev: () -> Unit,
     onSeek: (Long) -> Unit,
     onClose: () -> Unit,
+    /** Opens the Up Next list (there was no way to see the queue before). */
+    onOpenQueue: (() -> Unit)? = null,
 ) {
     val hue = (track.gradientSeed % 360).toFloat()
 
@@ -85,7 +89,21 @@ fun NowPlayingScreen(
                 "Ad-free • Background play on",
                 color = Color.White.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.Center,
             )
+            if (onOpenQueue != null) {
+                IconButton(onClick = onOpenQueue) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Up next",
+                        tint = Color.White,
+                    )
+                }
+            } else {
+                // Keep the title centred when there is no queue button.
+                Spacer(Modifier.width(48.dp))
+            }
         }
         Spacer(Modifier.height(24.dp))
         ArtworkBox(track = track, size = artSize)
