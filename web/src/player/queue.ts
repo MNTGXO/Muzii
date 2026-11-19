@@ -183,6 +183,24 @@ export function energyGap(a: Track, b: Track): number | undefined {
   return Math.abs(ea - eb);
 }
 
+/**
+ * Devotional / non-film content — mirrors isDevotional() in worker/src/radio.ts.
+ * A chant must not follow a film melody, and vice versa.
+ */
+const DEVOTIONAL_CUES = [
+  'bhajan', 'devotional', 'harivarasanam', 'suprabhatam', 'kirtan', 'kirtanam',
+  'namasankirtanam', 'ashtakam', 'stotram', 'chalisa', 'aarti', 'mantra',
+  'hymn', 'qawwali', 'naat', 'shloka', 'vandana', 'sahasranamam',
+];
+
+export function isDevotional(track: { title: string; album?: string }): boolean {
+  const hay = `${track.title} ${track.album ?? ''}`.toLowerCase();
+  return DEVOTIONAL_CUES.some((cue) => hay.includes(cue));
+}
+
+/** Years either side of the seed that still count as the same lane. */
+export const ERA_SPAN = 15;
+
 export function localRadio(
   seed: Track,
   catalog: Track[],
@@ -197,7 +215,12 @@ export function localRadio(
   // energy are dropped when enough in-lane songs remain.
   const sameLane = (t: Track) => {
     const gap = energyGap(seed, t);
-    return gap === undefined || gap < 0.6;
+    if (gap !== undefined && gap >= 0.6) return false;
+    // Era: a 2016 song has no business in a 1996 lane.
+    if (seed.year && t.year && Math.abs(seed.year - t.year) > ERA_SPAN) return false;
+    // Style: a devotional chant is a different kind of recording.
+    if (isDevotional(seed) !== isDevotional(t)) return false;
+    return true;
   };
   const inLane = catalog.filter(sameLane);
   const pool = inLane.length >= limit ? inLane : catalog;
