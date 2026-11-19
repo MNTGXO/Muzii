@@ -21,7 +21,13 @@ export function TrackRow({
       className={`track-row${active ? ' active' : ''}`}
       onClick={() => (active ? toggle() : playTrack(track, context))}
     >
-      <span className="track-index">{index + 1}</span>
+      {active && isPlaying ? (
+        <span className="eq" aria-hidden>
+          <i /><i /><i />
+        </span>
+      ) : (
+        <span className="track-index">{index + 1}</span>
+      )}
       <Artwork track={track} size={44} radius={8} />
       <span className="track-meta">
         <span className="track-title">{track.title}</span>
