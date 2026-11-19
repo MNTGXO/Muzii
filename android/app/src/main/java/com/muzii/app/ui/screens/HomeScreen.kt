@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.muzii.app.data.model.Playlist
 import com.muzii.app.data.model.Track
@@ -49,6 +50,15 @@ fun HomeScreen(
     onStartRadio: (Track) -> Unit = {},
     onOpenJam: () -> Unit = {},
 ) {
+    // Responsive card sizing: two-and-a-bit cards on a phone, more on a
+    // tablet or in landscape, instead of one fixed 150.dp everywhere.
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+    val cardSize = when {
+        screenWidthDp >= 900 -> 190.dp
+        screenWidthDp >= 600 -> 168.dp
+        else -> 140.dp
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Text(
@@ -159,12 +169,12 @@ fun HomeScreen(
                 items(playlists) { pl ->
                     Column(
                         modifier = Modifier
-                            .width(150.dp)
+                            .width(cardSize)
                             .clickable { onOpenPlaylist(pl) },
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(150.dp)
+                                .size(cardSize)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(
                                     Brush.linearGradient(

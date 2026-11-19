@@ -46,6 +46,16 @@ fun NowPlayingScreen(
     onClose: () -> Unit,
 ) {
     val hue = (track.gradientSeed % 360).toFloat()
+
+    // Responsive artwork: shrink on short/landscape screens so the controls
+    // never get pushed off the bottom.
+    val config = LocalConfiguration.current
+    val artSize = when {
+        config.screenHeightDp < 560 -> 180.dp
+        config.screenWidthDp >= 600 -> 320.dp
+        else -> 280.dp
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -54,6 +64,9 @@ fun NowPlayingScreen(
                     listOf(Color.hsv(hue, 0.7f, 0.55f), Color.Black),
                 ),
             )
+            // Scrollable so nothing is ever clipped (small phones, landscape,
+            // large font settings).
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -72,7 +85,7 @@ fun NowPlayingScreen(
             )
         }
         Spacer(Modifier.height(24.dp))
-        ArtworkBox(track = track, size = 300.dp)
+        ArtworkBox(track = track, size = artSize)
         Spacer(Modifier.height(32.dp))
         Text(
             track.title,

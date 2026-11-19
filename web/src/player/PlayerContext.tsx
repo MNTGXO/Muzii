@@ -359,14 +359,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
-  // If we're within 2 tracks of the end, top up early so playback is seamless.
+  // Top up when fewer than 3 songs remain in the queue.
+  //
+  // Deliberately NOT gated on isPlaying: a queue can be short while paused
+  // (autoplay blocked, headphone unplugged, user opened a jam), and it still
+  // needs songs waiting when play resumes. extendQueue() is lock-guarded, so
+  // running it for a paused queue costs nothing.
   useEffect(() => {
     if (!current || queueSource === 'jam') return;
-    if (queue.length - index <= 2 && isPlaying) {
+    if (queue.length - index <= 3) {
       void extendQueue(current, 8);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, queue.length, isPlaying]);
+  }, [index, queue.length, queueSource]);
 
   // Reflect playback state on the lock screen / notification.
   useEffect(() => {

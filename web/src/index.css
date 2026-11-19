@@ -190,7 +190,7 @@ input { font: inherit; color: inherit; }
 .page { max-width: 1100px; margin: 0 auto; animation: fade-in 0.35s var(--ease); }
 
 .page-title {
-  font-size: 34px;
+  font-size: clamp(22px, 4vw, 34px);
   font-weight: 800;
   letter-spacing: -0.02em;
   margin: 0 0 24px;
@@ -245,7 +245,7 @@ input { font: inherit; color: inherit; }
 }
 
 .featured-info { position: relative; z-index: 1; }
-.featured-info h2 { font-size: 40px; margin: 6px 0; letter-spacing: -0.02em; }
+.featured-info h2 { font-size: clamp(22px, 5vw, 40px); margin: 6px 0; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .featured-info p { margin: 0 0 20px; color: rgba(255, 255, 255, 0.85); }
 .featured-kicker {
   text-transform: uppercase;
@@ -371,7 +371,7 @@ input { font: inherit; color: inherit; }
   animation: fade-up 0.5s var(--ease) both;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
 }
-.playlist-hero h1 { font-size: 40px; margin: 0 0 8px; letter-spacing: -0.02em; }
+.playlist-hero h1 { font-size: clamp(22px, 5vw, 40px); margin: 0 0 8px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .playlist-hero p { margin: 0 0 16px; color: rgba(255, 255, 255, 0.85); }
 
 .back-btn {
@@ -631,7 +631,12 @@ input[type='range']::-moz-range-thumb {
 .pb-error { display: inline-flex; align-items: center; gap: 4px; color: #ff9f0a; }
 
 .np-art { margin-top: 24px; filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.5)); animation: pop-in 0.5s var(--ease) both; }
-.np-art .artwork { width: min(300px, 70vw); height: min(300px, 70vw); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55); }
+.np-art .artwork {
+  /* Fluid: tracks both axes, so landscape phones don't overflow. */
+  width: clamp(140px, min(70vw, 34dvh), 320px);
+  height: clamp(140px, min(70vw, 34dvh), 320px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
 
 /* Subtle "playing" breathing animation on the hero artwork. */
 .np-art.is-playing .artwork { animation: art-breathe 5s ease-in-out infinite; }
@@ -641,7 +646,7 @@ input[type='range']::-moz-range-thumb {
 }
 
 .np-meta { text-align: center; margin-top: 28px; }
-.np-meta h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+.np-meta h2 { margin: 0 0 6px; font-size: clamp(18px, 5vw, 26px); letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .np-meta p { margin: 0; color: rgba(255, 255, 255, 0.75); }
 
 .np-progress {
@@ -825,7 +830,7 @@ input[type='range']::-moz-range-thumb {
   margin-bottom: 14px;
   box-shadow: 0 12px 32px rgba(250, 45, 72, 0.4);
 }
-.jam-hero h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -0.02em; }
+.jam-hero h1 { margin: 0 0 8px; font-size: clamp(22px, 5vw, 32px); letter-spacing: -0.02em; }
 .jam-hero p { margin: 0 auto; max-width: 460px; color: var(--text-2); line-height: 1.55; }
 
 .jam-panels {
@@ -954,7 +959,7 @@ input[type='range']::-moz-range-thumb {
   color: var(--text-2);
   text-transform: none;
 }
-.jam-live h1 { margin: 8px 0 16px; font-size: 30px; letter-spacing: -0.02em; }
+.jam-live h1 { margin: 8px 0 16px; font-size: clamp(21px, 4.6vw, 30px); letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .jam-share { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .jam-code {
   font-size: 22px;
@@ -1208,7 +1213,7 @@ input[type='range']::-moz-range-thumb {
   /* Now Playing becomes a full-height sheet that scrolls safely. */
   .now-playing { padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
   .np-art { margin-top: 10px; }
-  .np-art .artwork { width: min(64vw, 280px); height: min(64vw, 280px); }
+  .np-art .artwork { width: clamp(140px, min(64vw, 30dvh), 280px); height: clamp(140px, min(64vw, 30dvh), 280px); }
   .np-meta { margin-top: 20px; }
   .np-meta h2 { font-size: 21px; }
   .np-progress { margin-top: 18px; }
