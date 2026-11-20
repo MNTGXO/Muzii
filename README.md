@@ -52,6 +52,17 @@ has a single `muzii.apk`. It's a work in progress — see *Known issues* below.
 
 ---
 
+## Your playlists on the website
+
+Create and edit playlists in Library, or add songs from the song rows. Your
+playlists stay in this browser profile; they don't sync and are lost if you
+clear site data. Import public YouTube Music, YouTube or JioSaavn links, or
+paste a list of songs from Spotify, Apple Music or another app, one “Title -
+Artist” per line. Muzii imports the tracklist, not the original service's
+audio, and shows songs it couldn't find. Some public links may be unavailable.
+
+---
+
 ## Known issues
 
 Honest list, not a promise of perfection:

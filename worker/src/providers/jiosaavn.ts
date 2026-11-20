@@ -139,7 +139,7 @@ function pickComposer(song: any): string | undefined {
   return raw.trim() || undefined;
 }
 
-function toTrack(song: any): Track | null {
+export function toTrack(song: any): Track | null {
   const id: string | undefined = song?.id;
   const url = pickDownloadUrl(song?.downloadUrl) ?? pickDownloadUrl(song?.media_url);
   if (!id || !url) return null;

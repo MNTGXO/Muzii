@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PlaylistsProvider } from './playlists/PlaylistsContext';
 import { PlayerProvider } from './player/PlayerContext';
 import { Sidebar, type Page } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
@@ -31,6 +32,8 @@ function readHash(): View | null {
   const hash = location.hash.replace(/^#\/?/, '');
   const jam = hash.match(/^jam\/?([A-Za-z0-9]{4,8})?$/);
   if (jam) return { type: 'jam', code: jam[1]?.toUpperCase() ?? null };
+  const playlist = hash.match(/^playlist\/(.+)$/);
+  if (playlist) { try { return { type: 'playlist', id: decodeURIComponent(playlist[1]) }; } catch { return null; } }
   if (hash === 'search') return { type: 'page', page: 'search' };
   if (hash === 'library') return { type: 'page', page: 'library' };
   if (hash === 'home' || hash === '') return null;
@@ -92,7 +95,7 @@ function Shell() {
   }, []);
 
   const openPlaylist = useCallback((id: string) => {
-    location.hash = '#/playlist';
+    location.hash = `#/playlist/${encodeURIComponent(id)}`;
     setView({ type: 'playlist', id });
   }, []);
 
@@ -223,7 +226,7 @@ export default function App() {
   return (
     <TasteProvider>
       <PlayerProvider>
-        <Shell />
+        <PlaylistsProvider><Shell /></PlaylistsProvider>
       </PlayerProvider>
     </TasteProvider>
   );

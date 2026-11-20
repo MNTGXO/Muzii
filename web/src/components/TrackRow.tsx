@@ -1,4 +1,6 @@
-import { Heart, Pause, Play, Radio, ThumbsDown } from 'lucide-react';
+import { useState } from 'react';
+import { AddToPlaylistSheet } from './AddToPlaylistSheet';
+import { Heart, Pause, Play, Radio, ThumbsDown, ListPlus } from 'lucide-react';
 import type { Track } from '../api/types';
 import { usePlayer } from '../player/PlayerContext';
 import { useTaste } from '../taste/TasteContext';
@@ -34,6 +36,7 @@ export function TrackRow({
 }) {
   const { current, isPlaying, playTrack, toggle, startRadio, enqueueNext } = usePlayer();
   const { isLiked, isDisliked, toggleLike, toggleDislike } = useTaste();
+  const [adding, setAdding] = useState(false);
   const active = current?.id === track.id;
   const liked = isLiked(track.id);
   const disliked = isDisliked(track.id);
@@ -71,6 +74,7 @@ export function TrackRow({
       </button>
 
       <span className="track-row-actions">
+        <button className="row-action" onClick={() => setAdding(true)} aria-label={`Add ${track.title} to playlist`} title="Add to playlist"><ListPlus size={16} /></button>
         <button
           className={`row-action like${liked ? ' on' : ''}`}
           onClick={() => toggleLike(track)}
@@ -113,6 +117,7 @@ export function TrackRow({
           <Radio size={15} />
         </button>
       </span>
+      {adding && <AddToPlaylistSheet track={track} onClose={() => setAdding(false)} />}
     </div>
   );
 }

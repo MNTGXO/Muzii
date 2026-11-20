@@ -6,10 +6,11 @@ import { adBlockedResponse, isAdRequest } from './adblock';
 import { handleStream } from './stream';
 import { buildRadio } from './radio';
 import { JamRoom, newCode } from './jam';
+import { resolveImport } from './playlistimport';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Range, Content-Type',
   'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
 };
@@ -223,6 +224,26 @@ export default {
         return json(tracks);
       }
 
+      /*
+       * Playlist import.
+       *
+       * POST because the body is a pasted tracklist as often as a link, and a
+       * 100-song list has no business in a URL. The Worker does the messy
+       * part (read the source, normalise the tracklist, match the songs
+       * against our catalogue) so the client only has to render a result and
+       * report what did not match.
+       */
+      if (url.pathname === '/api/playlist/import' && request.method === 'POST') {
+        const body = (await request.json().catch(() => ({}))) as { input?: string };
+        const input = typeof body.input === 'string' ? body.input : '';
+        const result = await resolveImport(input, (q) =>
+          withFallback(chain, (p) => p.search(q), itemListIsEmpty).then((r) => r.value),
+        );
+        const response = json(result);
+        response.headers.set('Cache-Control', 'no-store');
+        return response;
+      }
+
       // ---- Muzii Jam (shared listening rooms) ----
       if (url.pathname === '/api/jam' && request.method === 'POST') {
         const body = (await request.json().catch(() => ({}))) as { name?: string };
@@ -262,7 +283,7 @@ export default {
       return json(
         {
           error: 'not-found',
-          docs: 'GET /health | /api/catalog | /api/search?q= | /api/playlists | /api/track/:id | /api/stream/:id | /api/radio | /api/jam/:code',
+          docs: 'GET /health | /api/catalog | /api/search?q= | /api/playlists | /api/track/:id | /api/stream/:id | /api/radio | POST /api/playlist/import | /api/jam/:code',
         },
         404,
       );
