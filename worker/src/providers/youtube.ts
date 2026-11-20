@@ -480,29 +480,27 @@ export class YouTubeMusicProvider implements MusicProvider {
    * formats need player-JS deciphering, which a Worker cannot do.
    */
   async resolveStreamUrl(id: string): Promise<string | null> {
-    for (const client of PLAYER_CLIENTS) {
-      try {
-        const data = await innerTubePost(client, 'player', {
-          ...innerTubeContext(client),
-          videoId: id,
-          contentCheckOk: true,
-          racyCheckOk: true,
+    // Probe clients concurrently: serial 4-second timeouts followed by
+    // serial mirror timeouts could leave the player buffering for a minute.
+    const attempts = PLAYER_CLIENTS.map(async client => {
+      const data = await innerTubePost(client, 'player', {
+        ...innerTubeContext(client), videoId: id, contentCheckOk: true, racyCheckOk: true,
+      });
+      const formats: any[] = data?.streamingData?.adaptiveFormats ?? [];
+      const audio = formats
+        .filter(f => typeof f?.mimeType === 'string' && f.mimeType.startsWith('audio/') && f.url)
+        .sort((a, b) => {
+          const opusA = a.mimeType.includes('opus') ? 1 : 0;
+          const opusB = b.mimeType.includes('opus') ? 1 : 0;
+          return opusB - opusA || (b.bitrate ?? 0) - (a.bitrate ?? 0);
         });
-        const formats: any[] = data?.streamingData?.adaptiveFormats ?? [];
-        const audio = formats
-          .filter((f) => typeof f?.mimeType === 'string' && f.mimeType.startsWith('audio/') && f.url)
-          // Prefer Opus (best quality/size), then highest bitrate.
-          .sort((a, b) => {
-            const opusA = a.mimeType.includes('opus') ? 1 : 0;
-            const opusB = b.mimeType.includes('opus') ? 1 : 0;
-            return opusB - opusA || (b.bitrate ?? 0) - (a.bitrate ?? 0);
-          });
-        if (audio[0]?.url) return audio[0].url as string;
-      } catch {
-        // Try the next client.
-      }
+      if (!audio[0]?.url) throw new Error('no direct audio');
+      return audio[0].url as string;
+    });
+    try {
+      return await Promise.any(attempts);
+    } catch {
+      return streamViaPiped(id).catch(() => null);
     }
-    // Last resort: public mirrors that proxy the audio themselves.
-    return streamViaPiped(id).catch(() => null);
   }
 }

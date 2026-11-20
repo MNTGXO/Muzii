@@ -4,6 +4,7 @@ import { DemoProvider } from './providers/demo';
 import { providerChain } from './providers';
 import { adBlockedResponse, isAdRequest } from './adblock';
 import { handleStream } from './stream';
+import { streamWithCatalogFallback } from './streammatch';
 import { buildRadio } from './radio';
 import { JamRoom, newCode } from './jam';
 import { resolveImport } from './playlistimport';
@@ -170,17 +171,10 @@ export default {
       const streamMatch = url.pathname.match(/^\/api\/stream\/([^/]+)$/);
       if (streamMatch) {
         const id = decodeURIComponent(streamMatch[1]);
-        // Stream from the provider that owns this id (YouTube ids are bare,
-        // JioSaavn ids are prefixed `js:`), then fall back down the chain.
-        const ordered = [...chain].sort((a, b) => {
-          const owns = (p: MusicProvider) =>
-            p.name === 'jiosaavn' ? id.startsWith('js:') : !id.startsWith('js:');
-          return Number(owns(b)) - Number(owns(a));
-        });
-        for (const provider of ordered) {
-          const res = await handleStream(request, provider, id, ctx);
-          if (res.status !== 502) return res;
-        }
+        // Imported YouTube IDs can match a playable catalogue recording at
+        // request time; older saved playlists need no migration or re-import.
+        const res = await streamWithCatalogFallback(request, id, chain, ctx, handleStream);
+        if (res) return res;
         return json({ error: 'stream-unavailable' }, 502);
       }
 

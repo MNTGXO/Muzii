@@ -89,7 +89,14 @@ export async function getTrack(id: string): Promise<Track | null> {
  * own URL if that fails (works for demo tracks).
  */
 export function streamUrl(track: Track): string {
-  return `${API_BASE}/api/stream/${encodeURIComponent(track.id)}`;
+  const base = `${API_BASE}/api/stream/${encodeURIComponent(track.id)}`;
+  // Existing YouTube imports already contain these fields; they can be
+  // resolved against the catalogue without modifying the local playlist.
+  if (!track.id.startsWith('js:') && track.streamUrl.startsWith('ytmusic://')) {
+    const params = new URLSearchParams({ title: track.title, artist: track.artist });
+    return `${base}?${params.toString()}`;
+  }
+  return base;
 }
 
 // ---------------------------------------------------------------------------

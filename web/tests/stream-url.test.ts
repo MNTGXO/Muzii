@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { streamUrl } from '../src/api/client';
+import type { Track } from '../src/api/types';
+const track: Track = { id: 'video123', title: 'Pularikalo (From "Charlie")', artist: 'Gopi Sundar & Shakthishree Gopalan', album: '', durationSec: 0, streamUrl: 'ytmusic://video123', artworkUrl: '', gradientSeed: 0 };
+const url = new URL(streamUrl(track), 'https://muzii.pages.dev');
+assert.equal(url.pathname, '/api/stream/video123');
+assert.equal(url.searchParams.get('title'), track.title);
+assert.equal(url.searchParams.get('artist'), track.artist);
+assert.equal(streamUrl({ ...track, id: 'js:123', streamUrl: 'jiosaavn://123' }), '/api/stream/js%3A123');
+console.log('Playback stream URL tests passed');

@@ -162,6 +162,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** 0 = proxy stream, 1 = track's own direct URL (fallback). */
   const attemptRef = useRef(0);
+  const bufferTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearBufferGuard = useCallback(() => {
+    if (bufferTimerRef.current !== null) clearTimeout(bufferTimerRef.current);
+    bufferTimerRef.current = null;
+  }, []);
+  const armBufferGuard = useCallback(() => {
+    clearBufferGuard();
+    bufferTimerRef.current = setTimeout(() => {
+      bufferTimerRef.current = null;
+      audioRef.current?.pause();
+      setBuffering(false);
+      setIsPlaying(false);
+      setError('This track is taking too long to load. Try again or choose another song.');
+    }, 20_000);
+  }, [clearBufferGuard]);
 
   const persisted = useRef(loadPersisted());
   /**
@@ -393,6 +408,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onPause = () => setIsPlaying(false);
     const onWaiting = () => setBuffering(true);
     const onPlaying = () => {
+      clearBufferGuard();
       setBuffering(false);
       setError(null);
     };
@@ -424,9 +440,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
      * Playback error recovery chain:
      * 1. Proxy stream failed → retry with the track's direct URL (works for
      *    demo tracks).
-     * 2. Still failing → skip to the next track automatically (a dead song
-     *    shouldn't stop the session), and only surface an error if there is
-     *    nothing left to play.
+     * 2. Still failing → stop on the current song and show Retry / Next.
+     *    Automatically skipping hundreds of unavailable imported songs hides
+     *    the actual failure and can make the queue race indefinitely.
      */
     const onError = () => {
       const a = audioRef.current;
@@ -436,18 +452,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
       if (attemptRef.current === 0 && isHttpUrl(track.streamUrl)) {
         attemptRef.current = 1;
+        armBufferGuard();
         a.src = track.streamUrl;
         void a.play().catch(() => undefined);
         return;
       }
+      clearBufferGuard();
       setBuffering(false);
       setIsPlaying(false);
-      if (q.length > 1) {
-        // Auto-advance past a broken track.
-        next(true);
-        return;
-      }
-      setError('This track can’t be played right now.');
+      setError('This track can’t be played right now. Try again or choose another song.');
     };
 
     audio.addEventListener('play', onPlay);
@@ -461,6 +474,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audio.addEventListener('error', onError);
 
     return () => {
+      clearBufferGuard();
       audio.pause();
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
@@ -487,17 +501,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setError(null);
     setBuffering(true);
 
-    // Buffering must never be sticky: if the proxy stalls and the browser
-    // fires neither 'playing' nor 'error', the play button would keep showing
-    // a spinner forever (it looked like an empty white circle). Give up after
-    // 20s and surface the error state instead.
-    const bufferGuard = setTimeout(() => {
-      setBuffering(false);
-      setError((prev) => prev ?? 'This track is taking too long to load.');
-    }, 20_000);
-    const clearGuard = () => clearTimeout(bufferGuard);
-    audio.addEventListener('playing', clearGuard, { once: true });
-    audio.addEventListener('error', clearGuard, { once: true });
+    // Also arm this on Retry and on a direct-URL fallback.
+    armBufferGuard();
 
     // Every track we actually start counts as "played" — this is what stops
     // the same song coming back later in the session.
@@ -536,9 +541,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       });
     }
     return () => {
-      clearGuard();
-      audio.removeEventListener('playing', clearGuard);
-      audio.removeEventListener('error', clearGuard);
+      clearBufferGuard();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
@@ -798,10 +801,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     attemptRef.current = 0;
     setError(null);
     setBuffering(true);
+    armBufferGuard();
     audio.src = streamUrl(track);
     audio.load();
     void audio.play().catch(() => undefined);
-  }, []);
+  }, [armBufferGuard]);
 
   const seek = useCallback((s: number) => {
     if (audioRef.current) audioRef.current.currentTime = s;

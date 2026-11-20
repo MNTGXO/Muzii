@@ -123,33 +123,23 @@ export async function searchViaPiped(query: string): Promise<Track[]> {
   return [];
 }
 
-/** Resolve an audio URL through Piped mirrors. */
+/** Resolve through the first working mirror without serial timeout delays. */
 export async function streamViaPiped(id: string): Promise<string | null> {
-  for (const base of PIPED_INSTANCES) {
-    try {
-      const data = await getJson(`${base}/streams/${id}`);
-      const audio: any[] = Array.isArray(data?.audioStreams) ? data.audioStreams : [];
-      const sorted = [...audio].sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-      const url = sorted[0]?.url;
-      if (typeof url === 'string' && url.startsWith('http')) return url;
-    } catch {
-      // Try the next mirror.
-    }
-  }
-
-  for (const base of INVIDIOUS_INSTANCES) {
-    try {
-      const data = await getJson(`${base}/api/v1/videos/${id}`);
-      const formats: any[] = Array.isArray(data?.adaptiveFormats) ? data.adaptiveFormats : [];
-      const audio = formats
-        .filter((f) => typeof f?.type === 'string' && f.type.startsWith('audio/'))
-        .sort((a, b) => (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0));
-      const url = audio[0]?.url;
-      if (typeof url === 'string' && url.startsWith('http')) return url;
-    } catch {
-      // Try the next instance.
-    }
-  }
-
-  return null;
+  const piped = PIPED_INSTANCES.map(async base => {
+    const data = await getJson(`${base}/streams/${encodeURIComponent(id)}`);
+    const audio: any[] = Array.isArray(data?.audioStreams) ? data.audioStreams : [];
+    const url = [...audio].sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0]?.url;
+    if (typeof url !== 'string' || !url.startsWith('http')) throw new Error('no audio');
+    return url as string;
+  });
+  const invidious = INVIDIOUS_INSTANCES.map(async base => {
+    const data = await getJson(`${base}/api/v1/videos/${encodeURIComponent(id)}`);
+    const formats: any[] = Array.isArray(data?.adaptiveFormats) ? data.adaptiveFormats : [];
+    const url = formats.filter(f => typeof f?.type === 'string' && f.type.startsWith('audio/'))
+      .sort((a, b) => (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0))[0]?.url;
+    if (typeof url !== 'string' || !url.startsWith('http')) throw new Error('no audio');
+    return url as string;
+  });
+  try { return await Promise.any([...piped, ...invidious]); }
+  catch { return null; }
 }
