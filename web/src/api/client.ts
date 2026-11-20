@@ -227,24 +227,28 @@ export interface ImportResult {
   tracks: Track[];
   unmatched: { query: string; reason: 'not-found' | 'unreadable' }[];
   notice?: string;
+  spotifyEntries?: { title: string; artist: string }[];
 }
 
 /**
  * Import a playlist from another app.
  *
  * `input` is a share link or a pasted tracklist — the Worker decides which.
- * Public YouTube/JioSaavn links may be read directly. For Spotify, Apple
+ * Public YouTube/JioSaavn/Spotify links may be read directly. For Apple
  * Music and other services, paste song titles and artists instead.
  */
-export async function importPlaylist(input: string): Promise<ImportResult> {
+export async function importPlaylist(input: string, options: { entries?: { title: string; artist: string }[]; signal?: AbortSignal } = {}): Promise<ImportResult> {
   const controller = new AbortController();
   // An import batch may run several catalogue searches before it answers.
   const timer = setTimeout(() => controller.abort(), 55_000);
+  const abort = () => controller.abort();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) controller.abort();
   try {
     const res = await fetchWithAdBlock(`${API_BASE}/api/playlist/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input }),
+      body: JSON.stringify(options.entries ? { entries: options.entries } : { input }),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -254,6 +258,7 @@ export async function importPlaylist(input: string): Promise<ImportResult> {
     return (await res.json()) as ImportResult;
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
   }
 }
 

@@ -27,15 +27,16 @@ const variant = (title: string) => {
     .filter(word => new RegExp(`\\b${word}\\b`).test(value)).join('|');
 };
 
-export function selectCatalogMatch(title: string, artist: string, candidates: Track[]): Track | null {
+export function sameSong(title: string, artist: string, candidate: Track): boolean {
   const key = titleKey(title);
   const names = credits(artist);
-  if (key.length < 2 || !names.length) return null;
-  return candidates.find(candidate => {
-    if (!candidate.id.startsWith('js:') || titleKey(candidate.title) !== key || variant(candidate.title) !== variant(title)) return false;
-    const otherNames = credits(candidate.artist);
-    return names.some(name => otherNames.includes(name));
-  }) ?? null;
+  if (key.length < 2 || !names.length || titleKey(candidate.title) !== key || variant(candidate.title) !== variant(title)) return false;
+  const otherNames = credits(candidate.artist);
+  return names.some(name => otherNames.includes(name));
+}
+
+export function selectCatalogMatch(title: string, artist: string, candidates: Track[]): Track | null {
+  return candidates.find(candidate => candidate.id.startsWith('js:') && sameSong(title, artist, candidate)) ?? null;
 }
 
 // Cache successful matches briefly so browser range requests do not repeat
