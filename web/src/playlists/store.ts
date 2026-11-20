@@ -24,9 +24,6 @@ import type { Track } from '../api/types';
 
 const STORAGE_KEY = 'muzii_playlists_v1';
 
-/** Ceiling: localStorage is ~5MB, and 200 songs of ~350B is ~70KB a list. */
-const MAX_PLAYLISTS = 60;
-const MAX_TRACKS_PER_PLAYLIST = 500;
 
 export interface UserPlaylist {
   id: string;
@@ -118,14 +115,14 @@ export function loadPlaylists(): UserPlaylist[] {
         id: String(p.id),
         title: String(p.title),
         description: typeof p.description === 'string' ? p.description : '',
-        tracks: tracks.slice(0, MAX_TRACKS_PER_PLAYLIST),
+        tracks,
         gradient: typeof p.gradient === 'string' ? p.gradient : gradientFor(String(p.id)),
         createdAt: Number.isFinite(p.createdAt) ? Number(p.createdAt) : Date.now(),
         updatedAt: Number.isFinite(p.updatedAt) ? Number(p.updatedAt) : Date.now(),
         ...(p.importedFrom ? { importedFrom: String(p.importedFrom) } : {}),
       });
     }
-    return out.slice(0, MAX_PLAYLISTS);
+    return out;
   } catch {
     return [];
   }
@@ -134,14 +131,12 @@ export function loadPlaylists(): UserPlaylist[] {
 export function savePlaylists(playlists: UserPlaylist[]): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    if (playlists.length > MAX_PLAYLISTS || playlists.some(p => p.tracks.length > MAX_TRACKS_PER_PLAYLIST)) return false;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(playlists));
     return true;
   } catch {
     /*
-     * Quota exceeded. Do not throw into a click handler — the app keeps the
-     * in-memory copy so nothing visually breaks mid-session, but the caller
-     * shows "couldn't save" rather than pretending it stuck.
+     * Storage can be full or disabled. The caller keeps the previous state
+     * and reports the failure; no playlist is silently truncated or saved.
      */
     return false;
   }
@@ -158,7 +153,7 @@ export function blankPlaylist(
     id,
     title: title.trim() || 'New playlist',
     description: (opts.description ?? '').trim(),
-    tracks: (opts.tracks ?? []).slice(0, MAX_TRACKS_PER_PLAYLIST),
+    tracks: [...(opts.tracks ?? [])],
     gradient: gradientFor(id + title),
     createdAt: now,
     updatedAt: now,
@@ -193,7 +188,6 @@ export function playlistHas(playlist: UserPlaylist, track: Track): boolean {
 /** Append, skipping duplicates. Returns null when nothing was added. */
 export function withTrackAdded(playlist: UserPlaylist, track: Track): UserPlaylist | null {
   if (playlistHas(playlist, track)) return null;
-  if (playlist.tracks.length >= MAX_TRACKS_PER_PLAYLIST) return null;
   return { ...playlist, tracks: [...playlist.tracks, track], updatedAt: Date.now() };
 }
 

@@ -99,7 +99,7 @@ export function AddToPlaylistSheet({
           })}
         </div>
       )}
-      {storageFailed && <p className="sheet-note" role="alert">Could not save. Check browser storage or playlist limits.</p>}
+      {storageFailed && <p className="sheet-note" role="alert">Could not save. Browser storage may be full or unavailable; free up space and try again.</p>}
       {creating ? (
         <p className="sheet-note">
           <Loader2 size={14} className="spin" /> Creating…
