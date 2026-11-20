@@ -39,7 +39,8 @@ export function ImportPlaylistSheet({ onClose, onCreated }: { onClose: () => voi
     {error && <p role="alert" className="sheet-note">{error}</p>}
     {result && <div className="import-result" aria-live="polite">
       {result.notice && <p>{result.notice}</p>}
-      <p><strong>{result.tracks.length} matched</strong> · {result.unmatched.length} unmatched</p>
+      <p><strong>{result.tracks.length} {result.source === 'youtube' ? 'songs found' : 'matched'}</strong> · {result.unmatched.length} unmatched</p>
+      {result.source === 'youtube' && result.tracks.length > 0 && <p className="sheet-note">Songs are matched when played. Some may be unavailable.</p>}
       {result.unmatched.length > 0 && <details open><summary>Unmatched songs</summary><ul>{result.unmatched.map((x, i) => <li key={i}>{x.query} {x.reason === 'unreadable' ? '(unavailable)' : ''}</li>)}</ul></details>}
       {result.tracks.length > 0 && <><label htmlFor="import-name">Playlist name</label><input id="import-name" className="text-input" value={name} onChange={e => setName(e.target.value)} /><button className="btn-primary" disabled={!name.trim()} onClick={() => { const p = create(name, { tracks: result.tracks, importedFrom: result.source }); if (p) { onClose(); onCreated(p.id); } }}>Save playlist</button></>}
     </div>}
