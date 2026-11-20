@@ -203,6 +203,53 @@ export async function getJam(code: string, token?: string | null): Promise<JamSt
   return (await res.json()) as JamState;
 }
 
+// ---------------------------------------------------------------------------
+// Playlist import
+// ---------------------------------------------------------------------------
+
+/**
+ * What the Worker sends back for an import.
+ *
+ * `unmatched` is not noise: a Spotify playlist of 40 songs will not have all
+ * 40 in Muzii's catalogue, and reporting "38 of 40 found" is honest where
+ * silently importing 38 is not. `notice` explains a total failure.
+ */
+export interface ImportResult {
+  source: 'youtube' | 'jiosaavn' | 'spotify' | 'apple' | 'text' | 'unknown';
+  title: string;
+  tracks: Track[];
+  unmatched: { query: string; reason: 'not-found' | 'unreadable' }[];
+  notice?: string;
+}
+
+/**
+ * Import a playlist from another app.
+ *
+ * `input` is a share link or a pasted tracklist — the Worker decides which.
+ * Public YouTube/JioSaavn links may be read directly. For Spotify, Apple
+ * Music and other services, paste song titles and artists instead.
+ */
+export async function importPlaylist(input: string): Promise<ImportResult> {
+  const controller = new AbortController();
+  // An import batch may run several catalogue searches before it answers.
+  const timer = setTimeout(() => controller.abort(), 55_000);
+  try {
+    const res = await fetchWithAdBlock(`${API_BASE}/api/playlist/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `import failed (${res.status})`);
+    }
+    return (await res.json()) as ImportResult;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function jamAction<T = JamState>(
   code: string,
   action: string,

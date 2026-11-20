@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Play, Shuffle } from 'lucide-react';
+import { ArrowLeft, Play, Shuffle, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import { getCatalog, getPlaylists, getTrack } from '../api/client';
 import type { Playlist, Track } from '../api/types';
 import { usePlayer } from '../player/PlayerContext';
+import { usePlaylists } from '../playlists/PlaylistsContext';
 import { TrackRow } from '../components/TrackRow';
 
 export function PlaylistPage({
@@ -12,6 +13,8 @@ export function PlaylistPage({
   playlistId: string;
   onBack: () => void;
 }) {
+  const { playlists } = usePlaylists();
+  const local = playlists.find(p => p.id === playlistId);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +22,7 @@ export function PlaylistPage({
 
   useEffect(() => {
     let cancelled = false;
+    if (playlistId.startsWith('upl-')) { setPlaylist(null); setTracks([]); setLoading(false); return; }
     setLoading(true);
 
     void getPlaylists().then(async (pls) => {
@@ -56,6 +60,8 @@ export function PlaylistPage({
       cancelled = true;
     };
   }, [playlistId]);
+
+  if (local) return <LocalPlaylist id={local.id} onBack={onBack} />;
 
   if (!playlist) {
     return (
@@ -121,4 +127,22 @@ export function PlaylistPage({
       )}
     </div>
   );
+}
+
+function LocalPlaylist({ id, onBack }: { id: string; onBack: () => void }) {
+  const { playlists, rename, remove, moveTrack, removeTrack, storageFailed } = usePlaylists();
+  const { playQueue, shuffle, toggleShuffle } = usePlayer();
+  const p = playlists.find(x => x.id === id);
+  if (!p) return null;
+  return <div className="page">
+    <button className="back-btn" onClick={onBack}><ArrowLeft size={18} /> Back</button>
+    <section className="playlist-hero" style={{ background: p.gradient }}><h1>{p.title}</h1><p className="playlist-meta">{p.tracks.length} songs · On this device</p><div className="hero-actions">
+      <button className="btn-primary" disabled={!p.tracks.length} onClick={() => playQueue(p.tracks, 0)}><Play size={18} /> Play all</button>
+      <button className="btn-ghost" disabled={!p.tracks.length} onClick={() => { if (!shuffle) toggleShuffle(); playQueue(p.tracks, Math.floor(Math.random() * p.tracks.length)); }}><Shuffle size={18} /> Shuffle</button>
+      <button className="btn-ghost" onClick={() => { const name = window.prompt('Playlist name', p.title); if (name?.trim()) rename(id, name); }}>Rename</button>
+      <button className="btn-ghost" onClick={() => { if (window.confirm(`Delete “${p.title}”?`)) { if (remove(id)) onBack(); } }}>Delete</button>
+    </div></section>
+    {storageFailed && <p role="alert">Could not save. Check browser storage or playlist limits.</p>}
+    <div className="track-list">{p.tracks.map((t, i) => <div key={`${t.id}-${i}`} className="playlist-edit-row"><TrackRow track={t} context={p.tracks} index={i} /><div className="playlist-edit-actions"><button disabled={i === 0} onClick={() => moveTrack(id, i, i - 1)} aria-label={`Move ${t.title} up`}><ArrowUp size={16} /></button><button disabled={i === p.tracks.length - 1} onClick={() => moveTrack(id, i, i + 1)} aria-label={`Move ${t.title} down`}><ArrowDown size={16} /></button><button onClick={() => removeTrack(id, t.id)} aria-label={`Remove ${t.title} from playlist`}><Trash2 size={16} /></button></div></div>)}{!p.tracks.length && <p className="empty">No songs yet. Use the add-to-playlist button on a song.</p>}</div>
+  </div>;
 }
