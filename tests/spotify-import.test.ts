@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import { spotifyPlaylistId, parseSpotifyEmbed } from '../worker/src/spotify';
+import { resolveImport, resolveEntries } from '../worker/src/playlistimport';
+import worker from '../worker/src/index';
+import type { Track, Env } from '../worker/src/types';
+const id = '37i9dQZF1DXcBWIGoYBM5M';
+const payload = (list: unknown[], extra: object = {}) => `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { state: { data: { entity: { name: 'My & Music', trackList: list, ...extra } } } } } })}</script></html>`;
+const candidate: Track = { id: 'js:1', title: 'Good Song', artist: 'Artist One', album: '', durationSec: 200, streamUrl: 'jiosaavn://1', artworkUrl: '', gradientSeed: 1 };
+async function main() {
+  assert.equal(spotifyPlaylistId(`https://open.spotify.com/playlist/${id}?si=abc`), id);
+  assert.equal(spotifyPlaylistId(`https://open.spotify.com/intl-en/playlist/${id}`), id);
+  assert.equal(spotifyPlaylistId(`spotify:playlist:${id}`), id);
+  assert.equal(spotifyPlaylistId(`https://open.spotify.com.evil.test/playlist/${id}`), null);
+  assert.equal(spotifyPlaylistId(`https://open.spotify.com@evil.test/playlist/${id}`), null);
+  assert.equal(spotifyPlaylistId(`http://open.spotify.com/playlist/${id}`), null);
+  assert.equal(spotifyPlaylistId('https://open.spotify.com/playlist/abc'), null);
+  const parsed = parseSpotifyEmbed(payload([{ title: 'Good Song', subtitle: 'Artist One, Other' }, { title: 'Hidden' }, {}], { trackCount: 7 }));
+  assert.equal(parsed.title, 'My & Music'); assert.deepEqual(parsed.entries, [{ title: 'Good Song', artist: 'Artist One, Other' }]);
+  assert.equal(parsed.unreadable.length, 2); assert.match(parsed.notice, /3 of 7/);
+  assert.match(parseSpotifyEmbed(payload(Array.from({ length: 1001 }, () => ({ title: 'A', subtitle: 'B' })))).notice, /first 1000/);
+  assert.throws(() => parseSpotifyEmbed('<html>bad</html>'));
+  const original = globalThis.fetch;
+  try {
+    let called = '';
+    globalThis.fetch = async (input, init) => { called = String(input); assert.equal(init?.redirect, 'manual'); return new Response(payload([{ title: 'Good Song', subtitle: 'Artist One, Other' }, { title: 'Missing', subtitle: 'Artist One' }, { title: 'Hidden' }]), { status: 200 }); };
+    const result = await resolveImport(`https://open.spotify.com/playlist/${id}?si=x`, async () => []);
+    assert.equal(called, `https://open.spotify.com/embed/playlist/${id}`);
+    assert.equal(result.source, 'spotify'); assert.equal(result.spotifyEntries?.length, 2); assert.equal(result.unmatched.length, 1);
+    const matched = await resolveEntries(result.spotifyEntries!, async q => q.startsWith('Good Song') ? [candidate] : []);
+    assert.deepEqual(matched.tracks, [candidate]); assert.equal(matched.unmatched[0].query, 'Missing - Artist One');
+    const badArtist = await resolveEntries([{ title: 'Good Song', artist: 'Wrong Person' }], async () => [candidate]);
+    assert.equal(badArtist.tracks.length, 0);
+    const wrongVariant = await resolveEntries([{ title: 'Good Song (Remix)', artist: 'Artist One' }], async () => [candidate]);
+    assert.equal(wrongVariant.tracks.length, 0);
+    globalThis.fetch = async () => new Response(null, { status: 403 });
+    assert.match((await resolveImport('spotify:playlist:bad', async () => [])).notice!, /not valid/i);
+    const unavailable = await resolveImport(`https://open.spotify.com/playlist/${id}`, async () => []);
+    assert.match(unavailable.notice!, /paste its song list/i);
+    globalThis.fetch = async () => new Response(null, { status: 302, headers: { Location: 'https://example.org/' } });
+    assert.match((await resolveImport(`spotify:playlist:${id}`, async () => [])).notice!, /could not read/i);
+  } finally { globalThis.fetch = original; }
+  const env = { PROVIDER: 'demo', APP_NAME: 'Muzii' } as Env;
+  const ctx = {} as ExecutionContext;
+  const post = (body: unknown) => worker.fetch(new Request('https://muzii.test/api/playlist/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), env, ctx);
+  const response = await post({ entries: [{ title: 'Neon Skyline', artist: 'SoundHelix' }, { title: 'Missing', artist: 'Nobody' }] });
+  assert.equal(response.status, 200); const body: any = await response.json();
+  assert.equal(body.tracks.length, 1); assert.equal(body.unmatched.length, 1); assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.equal((await post({ entries: Array(11).fill({ title: 'x', artist: 'y' }) })).status, 400);
+  assert.equal((await post({ entries: [{ title: 'x', artist: '' }] })).status, 400);
+  console.log('Spotify import tests passed');
+}
+main().catch(err => { console.error(err); process.exitCode = 1; });

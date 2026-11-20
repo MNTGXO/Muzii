@@ -7,7 +7,7 @@ import { handleStream } from './stream';
 import { streamWithCatalogFallback } from './streammatch';
 import { buildRadio } from './radio';
 import { JamRoom, newCode } from './jam';
-import { resolveImport } from './playlistimport';
+import { resolveEntries, resolveImport } from './playlistimport';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -228,11 +228,18 @@ export default {
        * report what did not match.
        */
       if (url.pathname === '/api/playlist/import' && request.method === 'POST') {
-        const body = (await request.json().catch(() => ({}))) as { input?: string };
-        const input = typeof body.input === 'string' ? body.input : '';
-        const result = await resolveImport(input, (q) =>
-          withFallback(chain, (p) => p.search(q), itemListIsEmpty).then((r) => r.value),
-        );
+        const body = (await request.json().catch(() => ({}))) as { input?: unknown; entries?: unknown };
+        const search = (q: string) => withFallback(chain, (p) => p.search(q), itemListIsEmpty).then((r) => r.value);
+        let result;
+        if (body.entries !== undefined) {
+          if (!Array.isArray(body.entries) || body.entries.length < 1 || body.entries.length > 10 ||
+            !body.entries.every((item: any) => item && typeof item.title === 'string' && item.title.trim().length > 0 && item.title.length <= 300 && typeof item.artist === 'string' && item.artist.trim().length > 0 && item.artist.length <= 500)) {
+            return json({ error: 'invalid-entries' }, 400);
+          }
+          result = await resolveEntries(body.entries.map((e: any) => ({ title: e.title, artist: e.artist })), search);
+        } else {
+          result = await resolveImport(typeof body.input === 'string' ? body.input : '', search);
+        }
         const response = json(result);
         response.headers.set('Cache-Control', 'no-store');
         return response;

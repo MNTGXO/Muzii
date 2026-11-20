@@ -1,6 +1,8 @@
 import type { Track } from './types';
 import { cleanTitle } from './radio';
 import { toTrack } from './providers/jiosaavn';
+import { sameSong } from './streammatch';
+import { readSpotifyPlaylist, spotifyPlaylistId, type SpotifyEntry } from './spotify';
 
 export interface ImportResult {
   source: 'youtube' | 'jiosaavn' | 'spotify' | 'apple' | 'text' | 'unknown';
@@ -8,6 +10,8 @@ export interface ImportResult {
   tracks: Track[];
   unmatched: { query: string; reason: 'not-found' | 'unreadable' }[];
   notice?: string;
+  /** Spotify metadata is matched in bounded client-driven batches. */
+  spotifyEntries?: SpotifyEntry[];
 }
 const empty = (source: ImportResult['source'], notice: string): ImportResult => ({ source, title: '', tracks: [], unmatched: [], notice });
 const words = (text: string) => cleanTitle(text).trim();
@@ -15,18 +19,22 @@ const words = (text: string) => cleanTitle(text).trim();
 export async function matchEntry(search: (q: string) => Promise<Track[]>, title: string, artist: string): Promise<Track | null> {
   const wanted = words(title);
   if (!wanted) return null;
-  const candidates = await search([title, artist].filter(Boolean).join(' ')).catch(() => []);
-  const scored = candidates.map(track => {
-    const got = words(track.title);
-    // Do not silently replace a song with a different search result.
-    if (!got || (got !== wanted && !(wanted.length >= 5 && (got.startsWith(wanted + ' ') || wanted.startsWith(got + ' '))))) return { track, score: 0 };
-    const a = words(artist), b = words(track.artist);
-    const aTokens = a.split(' ').filter(Boolean), bTokens = b.split(' ').filter(Boolean);
-    const overlap = aTokens.filter(w => bTokens.includes(w)).length / Math.max(aTokens.length, bTokens.length);
-    if (a && b && overlap < 0.75 && b !== 'unknown artist') return { track, score: 0 };
-    return { track, score: got === wanted ? 2 : 1 };
-  }).sort((a, b) => b.score - a.score);
-  return scored[0]?.score ? scored[0].track : null;
+  // Long lists of artist credits often return no results. Search by the
+  // first credit, then title alone, but verify the complete metadata before
+  // accepting a result so a similarly named recording is not substituted.
+  const firstArtist = artist.split(/[,;&]/)[0].trim();
+  const queries = [...new Set([firstArtist ? `${title} ${firstArtist}` : title, title])];
+  for (const query of queries) {
+    const candidates = await search(query).catch(() => []);
+    if (artist) {
+      const matched = candidates.find(track => sameSong(title, artist, track));
+      if (matched) return matched;
+    } else {
+      const matched = candidates.find(track => words(track.title) === wanted);
+      if (matched) return matched;
+    }
+  }
+  return null;
 }
 
 export function parsePastedList(text: string): { title: string; artist: string; query: string }[] {
@@ -97,6 +105,17 @@ export async function resolveImport(input: string, search: (q: string) => Promis
   const text = input.trim();
   if (!text) return empty('unknown', 'Paste a playlist link or song list.');
   if (text.length > 20000) return empty('unknown', 'Input is too long. Split your song list into smaller batches.');
+  const spotifyId = spotifyPlaylistId(text);
+  if (spotifyId) {
+    try {
+      const playlist = await readSpotifyPlaylist(spotifyId);
+      return { source: 'spotify', title: playlist.title, tracks: [], spotifyEntries: playlist.entries,
+        unmatched: playlist.unreadable.map(query => ({ query, reason: 'unreadable' })), notice: playlist.notice };
+    } catch {
+      return empty('spotify', 'Could not read this Spotify playlist. Make it public and try again, or paste its song list instead.');
+    }
+  }
+  if (/^spotify:playlist:/i.test(text)) return empty('spotify', 'That Spotify playlist link is not valid. Copy the playlist link and try again.');
   if (/^https?:\/\//i.test(text) || /^(music\.youtube\.com|www\.youtube\.com|open\.spotify\.com)\//i.test(text)) {
     let url: URL;
     try { url = new URL(/^https?:/i.test(text) ? text : `https://${text}`); } catch { return empty('unknown', 'That link is not valid.'); }
@@ -115,6 +134,13 @@ export async function resolveImport(input: string, search: (q: string) => Promis
   const entries = parsePastedList(text);
   if (!entries.length) return empty('text', 'Paste at least one song.');
   if (entries.length > 10) return empty('text', 'Please import at most 10 songs per batch.');
+  return resolveEntries(entries, search);
+}
+
+export async function resolveEntries(
+  entries: { title: string; artist: string; query?: string }[],
+  search: (q: string) => Promise<Track[]>,
+): Promise<ImportResult> {
   const matches = await Promise.all(entries.map(e => matchEntry(search, e.title, e.artist)));
-  return { source: 'text', title: '', tracks: matches.filter((t): t is Track => t !== null), unmatched: entries.filter((_, i) => !matches[i]).map(e => ({ query: e.query, reason: 'not-found' })) };
+  return { source: 'text', title: '', tracks: matches.filter((t): t is Track => t !== null), unmatched: entries.filter((_, i) => !matches[i]).map(e => ({ query: e.query ?? `${e.title} - ${e.artist}`, reason: 'not-found' })) };
 }
