@@ -31,7 +31,7 @@ export function PlaylistsProvider({ children }: { children: ReactNode }) {
   };
   const value: Context = {
     playlists, byRecency: useMemo(() => [...playlists].sort((a, b) => b.updatedAt - a.updatedAt), [playlists]), storageFailed,
-    create: (title, opts) => { if (ref.current.length >= 60 || (opts?.tracks?.length ?? 0) > 500) { setStorageFailed(true); return null; } const p = blankPlaylist(title, opts); return commit([p, ...ref.current]) ? p : null; },
+    create: (title, opts) => { const p = blankPlaylist(title, opts); return commit([p, ...ref.current]) ? p : null; },
     rename: (id, title) => { if (title.trim()) commit(ref.current.map(p => p.id === id ? { ...p, title: title.trim(), updatedAt: Date.now() } : p)); },
     remove: id => commit(ref.current.filter(p => p.id !== id)),
     addTrack: (id, t) => { const p = ref.current.find(p => p.id === id); const next = p && withTrackAdded(p, t); return !!next && commit(ref.current.map(p => p.id === id ? next : p)); },

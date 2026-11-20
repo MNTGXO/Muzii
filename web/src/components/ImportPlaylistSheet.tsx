@@ -17,7 +17,10 @@ export function ImportPlaylistSheet({ onClose, onCreated }: { onClose: () => voi
       const lines = input.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
       const isLink = lines.length === 1 && /^(https?:\/\/|(?:music|www)\.youtube\.com\/|open\.spotify\.com\/)/i.test(lines[0]);
       const batches = isLink ? [input.trim()] : Array.from({ length: Math.ceil(lines.length / 10) }, (_, i) => lines.slice(i * 10, i * 10 + 10).join('\n'));
-      if (lines.length > 500) throw new Error('Please import no more than 500 songs at a time.');
+      if (!isLink && lines.length > 500) {
+        setError('Please import no more than 500 pasted songs at a time.');
+        return;
+      }
       let all: ImportResult = { source: 'text', title: '', tracks: [], unmatched: [] };
       for (let i = 0; i < batches.length; i++) {
         setProgress(`Checking batch ${i + 1} of ${batches.length}…`);
@@ -40,6 +43,6 @@ export function ImportPlaylistSheet({ onClose, onCreated }: { onClose: () => voi
       {result.unmatched.length > 0 && <details open><summary>Unmatched songs</summary><ul>{result.unmatched.map((x, i) => <li key={i}>{x.query} {x.reason === 'unreadable' ? '(unavailable)' : ''}</li>)}</ul></details>}
       {result.tracks.length > 0 && <><label htmlFor="import-name">Playlist name</label><input id="import-name" className="text-input" value={name} onChange={e => setName(e.target.value)} /><button className="btn-primary" disabled={!name.trim()} onClick={() => { const p = create(name, { tracks: result.tracks, importedFrom: result.source }); if (p) { onClose(); onCreated(p.id); } }}>Save playlist</button></>}
     </div>}
-    {storageFailed && <p role="alert">Could not save. Check browser storage or playlist limits.</p>}
+    {storageFailed && <p role="alert">Could not save. Browser storage may be full or unavailable; free up space and try again.</p>}
   </Sheet>;
 }

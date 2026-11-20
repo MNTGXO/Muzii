@@ -142,7 +142,7 @@ function LocalPlaylist({ id, onBack }: { id: string; onBack: () => void }) {
       <button className="btn-ghost" onClick={() => { const name = window.prompt('Playlist name', p.title); if (name?.trim()) rename(id, name); }}>Rename</button>
       <button className="btn-ghost" onClick={() => { if (window.confirm(`Delete “${p.title}”?`)) { if (remove(id)) onBack(); } }}>Delete</button>
     </div></section>
-    {storageFailed && <p role="alert">Could not save. Check browser storage or playlist limits.</p>}
+    {storageFailed && <p role="alert">Could not save. Browser storage may be full or unavailable; free up space and try again.</p>}
     <div className="track-list">{p.tracks.map((t, i) => <div key={`${t.id}-${i}`} className="playlist-edit-row"><TrackRow track={t} context={p.tracks} index={i} /><div className="playlist-edit-actions"><button disabled={i === 0} onClick={() => moveTrack(id, i, i - 1)} aria-label={`Move ${t.title} up`}><ArrowUp size={16} /></button><button disabled={i === p.tracks.length - 1} onClick={() => moveTrack(id, i, i + 1)} aria-label={`Move ${t.title} down`}><ArrowDown size={16} /></button><button onClick={() => removeTrack(id, t.id)} aria-label={`Remove ${t.title} from playlist`}><Trash2 size={16} /></button></div></div>)}{!p.tracks.length && <p className="empty">No songs yet. Use the add-to-playlist button on a song.</p>}</div>
   </div>;
 }

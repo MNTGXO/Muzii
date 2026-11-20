@@ -30,8 +30,24 @@ async function main() {
   const data = new Map<string, string>();
   (globalThis as any).window = { localStorage: { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v) } };
   assert.equal(savePlaylists([p]), true); assert.deepEqual(loadPlaylists()[0].tracks, p.tracks);
+  // The public link in the regression report returns 813 songs. Creating,
+  // persisting, loading and editing must all preserve the entire list.
+  const many = Array.from({ length: 813 }, (_, i) => song(`id-${i}`, `Song ${i}`));
+  const large = blankPlaylist('Large import', { tracks: many, importedFrom: 'youtube' });
+  assert.equal(large.tracks.length, 813);
+  assert.equal(savePlaylists([large, p]), true);
+  const reloaded = loadPlaylists();
+  assert.deepEqual(reloaded[0].tracks, many);
+  assert.deepEqual(reloaded[1].tracks, p.tracks);
+  const extended = withTrackAdded(reloaded[0], song('extra', 'Another song'))!;
+  assert.equal(extended.tracks.length, 814);
+  assert.equal(savePlaylists([extended, p]), true);
+  assert.equal(loadPlaylists()[0].tracks.length, 814);
+  const savedBeforeFailure = data.get('muzii_playlists_v1');
   (globalThis as any).window.localStorage.setItem = () => { throw new Error('quota'); };
   assert.equal(savePlaylists([p]), false);
+  assert.equal(data.get('muzii_playlists_v1'), savedBeforeFailure);
+  assert.equal(loadPlaylists()[0].tracks.length, 814);
   console.log('Playlist import and storage tests passed');
 }
 main().catch(err => { console.error(err); process.exitCode = 1; });
