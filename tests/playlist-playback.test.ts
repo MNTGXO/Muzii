@@ -11,6 +11,8 @@ assert.equal(selectCatalogMatch(title, artist, [track('js:wrong', 'Pularikalo', 
 assert.equal(selectCatalogMatch(title, artist, [track('js:wrong', 'Pularikalo Remix', 'Gopi Sundar')]), null);
 assert.equal(selectCatalogMatch(title, artist, [track('js:wrong', 'Pularikalo (Remix)', 'Gopi Sundar')]), null);
 assert.equal(selectCatalogMatch(title, 'Unknown Artist', [matching]), null);
+assert.equal(selectCatalogMatch('Song &quot;One&quot;', 'Singer feat. Partner', [track('js:entity', 'Song \"One\"', 'Partner')])?.id, 'js:entity');
+assert.equal(selectCatalogMatch('Different', ' '.repeat(50000), [matching]), null);
 assert.equal(selectCatalogMatch(title, artist, [track('yt', 'Pularikalo', 'Gopi Sundar')]), null);
 let searches = 0;
 const saavn = { name: 'jiosaavn', search: async () => { searches++; return [matching]; } } as unknown as MusicProvider;

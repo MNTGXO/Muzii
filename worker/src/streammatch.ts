@@ -4,13 +4,22 @@ import { cleanTitle } from './radio';
 
 // Replacements must be the same song and share a credited artist. A search
 // result with a vaguely similar name is not enough to change what plays.
-const normalise = (text: string) => text.toLowerCase()
-  .replace(/&amp;/g, '&').replace(/&#(?:0*39|x27);/gi, "'")
-  .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
-const titleKey = (title: string) => cleanTitle(title.replace(/&amp;/g, '&').replace(/&quot;/g, '"'));
+// Decode known entities in one pass; do not reinterpret newly decoded text.
+const decodeEntities = (text: string) => text.replace(/&(?:amp|quot|apos|#0*39|#x27);/gi, entity => {
+  switch (entity.toLowerCase()) {
+    case '&amp;': return '&';
+    case '&quot;': return '"';
+    case '&apos;': return "'";
+    default: return "'";
+  }
+});
+const normalise = (text: string) => decodeEntities(text).toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const titleKey = (title: string) => cleanTitle(decodeEntities(title));
+// Whitespace is trimmed by normalise rather than by a regex surrounding each
+// delimiter, avoiding quadratic backtracking on long strings of spaces.
 const credits = (artist: string) => artist
-  .split(/\s*(?:,|&|;|\bfeat\.?\b|\bft\.?\b|\bwith\b)\s*/i)
+  .split(/[,;&]|\b(?:feat|ft)\b\.?|\bwith\b/i)
   .map(normalise).filter(name => name.length >= 3 && name !== 'unknown artist');
 const variant = (title: string) => {
   const value = normalise(title);
@@ -35,8 +44,9 @@ const matches = new Map<string, { track: Track; expires: number }>();
 
 /** Match on demand: even an 800-song import needs only one search at a time. */
 export async function findCatalogMatch(provider: MusicProvider, title: string, artist: string): Promise<Track | null> {
+  if (title.length > 300 || artist.length > 500 || !title.trim()) return null;
   const firstArtist = credits(artist)[0];
-  if (!title.trim() || !firstArtist || title.length > 300 || artist.length > 500) return null;
+  if (!firstArtist) return null;
   const key = JSON.stringify([title, artist]);
   const cached = matches.get(key);
   if (cached && cached.expires > Date.now()) return cached.track;
