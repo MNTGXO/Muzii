@@ -103,6 +103,8 @@ object PlayerManager {
     /** Set by the ViewModel: fetch more songs when the queue runs dry. */
     var onQueueExhausted: ((seed: Track, played: List<String>) -> Unit)? = null
     private var exhaustRequested = false
+    var queueGeneration: Long = 0
+        private set
 
     val current: Track? get() = _queue.value.getOrNull(_currentIndex.value)
 
@@ -233,13 +235,15 @@ object PlayerManager {
     }
 
     /** Called by the ViewModel when fresh radio tracks arrive. */
-    fun appendToQueue(tracks: List<Track>) {
+    fun appendToQueue(tracks: List<Track>, expectedGeneration: Long? = null) {
+        if (expectedGeneration != null && expectedGeneration != queueGeneration) return
         exhaustRequested = false
         if (tracks.isEmpty()) return
         val c = controller
-        val seenKeys = HashSet<String>()
+        val seenKeys = _queue.value.mapTo(HashSet()) { keyOf(it) }
+        val queuedIds = _queue.value.mapTo(HashSet()) { it.id }
         val fresh = tracks.filter {
-            !playedIds.contains(it.id) &&
+            it.id !in queuedIds && !playedIds.contains(it.id) &&
                 !playedKeys.contains(keyOf(it)) &&
                 // Also dedupe within the batch itself (same song, two rows).
                 seenKeys.add(keyOf(it))
@@ -263,6 +267,7 @@ object PlayerManager {
 
     fun playQueue(tracks: List<Track>, startIndex: Int = 0, radio: Boolean = false) {
         if (tracks.isEmpty()) return
+        queueGeneration++
         // Collapse versions of one song before they reach the queue: catalogs
         // list "Minnum Minnamai", "... (Male)", "... (Female)" as separate
         // tracks, which filled the queue with the same song.

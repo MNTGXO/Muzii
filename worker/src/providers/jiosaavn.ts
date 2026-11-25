@@ -309,6 +309,13 @@ export class JioSaavnProvider implements MusicProvider {
     return tracks;
   }
 
+  async recommendations(id: string): Promise<Track[]> {
+    if (!id.startsWith('js:')) return [];
+    const data = await apiGet(`/songs/${encodeURIComponent(id.slice(3))}/suggestions`);
+    const songs = Array.isArray(data?.data) ? data.data : collectResults(data);
+    return songs.map(toTrack).filter((t: Track | null): t is Track => t !== null);
+  }
+
   async getTrack(id: string): Promise<Track | null> {
     const songId = id.startsWith('js:') ? id.slice(3) : id;
     try {

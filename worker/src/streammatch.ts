@@ -19,6 +19,7 @@ const titleKey = (title: string) => cleanTitle(decodeEntities(title));
 // Whitespace is trimmed by normalise rather than by a regex surrounding each
 // delimiter, avoiding quadratic backtracking on long strings of spaces.
 const credits = (artist: string) => artist
+  .replace(/\s+-\s+topic$/i, '')
   .split(/[,;&]|\b(?:feat|ft)\b\.?|\bwith\b/i)
   .map(normalise).filter(name => name.length >= 3 && name !== 'unknown artist');
 const variant = (title: string) => {
@@ -83,6 +84,25 @@ export async function streamWithCatalogFallback(
       const res = await stream(request, catalogue, match.id, ctx);
       if (res.status !== 502) return res;
     }
+  }
+  // A JioSaavn ID is not a YouTube ID. First try the owning provider; if
+  // it fails, search other providers for the same title AND credited artist.
+  if (id.startsWith('js:') && title && artist && title.length <= 300 && artist.length <= 500) {
+    if (catalogue) {
+      const original = await stream(request, catalogue, id, ctx);
+      if (original.status !== 502) return original;
+    }
+    for (const provider of chain.filter(p => p.name !== 'jiosaavn' && p.name !== 'demo')) {
+      const firstArtist = credits(artist)[0];
+      if (!firstArtist) break;
+      let candidates: Track[] = [];
+      try { candidates = await provider.search(`${title} ${firstArtist}`); } catch { /* try the next provider */ }
+      const match = candidates.find(t => t.id !== id && sameSong(title, artist, t));
+      if (!match) continue;
+      const res = await stream(request, provider, match.id, ctx);
+      if (res.status !== 502) return res;
+    }
+    return null;
   }
   const ordered = [...chain].sort((a, b) => {
     const owns = (p: MusicProvider) => p.name === 'jiosaavn' ? id.startsWith('js:') : !id.startsWith('js:');

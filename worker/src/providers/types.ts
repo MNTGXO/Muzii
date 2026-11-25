@@ -16,6 +16,8 @@ export interface MusicProvider {
    */
   getCatalog(languages?: string[]): Promise<Track[]>;
   search(query: string): Promise<Track[]>;
+  /** Provider-provided related tracks, when available. */
+  recommendations?(id: string): Promise<Track[]>;
   getTrack(id: string): Promise<Track | null>;
   getPlaylists(languages?: string[]): Promise<Playlist[]>;
   getLyrics(trackId: string): Promise<string[]>;

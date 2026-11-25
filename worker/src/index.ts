@@ -209,6 +209,8 @@ export default {
           seedLanguage: url.searchParams.get('lang') ?? undefined,
           seedComposer: url.searchParams.get('composer') ?? undefined,
           seedYear: num('year'),
+          seedAlbum: (url.searchParams.get('album') ?? '').slice(0, 300),
+          seedDurationSec: num('duration'),
           taste: {
             avoid: list('avoid'),
             loved: list('loved'),

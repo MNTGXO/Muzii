@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/check-pwa.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "bash scripts/test-regressions.sh"
   },
   "dependencies": {
     "lucide-react": "^0.454.0",

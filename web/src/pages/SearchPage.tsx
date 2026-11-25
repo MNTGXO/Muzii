@@ -88,7 +88,7 @@ export function SearchPage() {
 
       <div className="track-list">
         {results.map((t, i) => (
-          <TrackRow key={t.id} track={t} context={results} index={i} />
+          <TrackRow key={t.id} track={t} context={results} index={i} radioOnPlay />
         ))}
       </div>
 

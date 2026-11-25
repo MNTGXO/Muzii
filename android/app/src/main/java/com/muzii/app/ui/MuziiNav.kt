@@ -237,7 +237,6 @@ fun MuziiNav(
                         currentTrackId = currentTrack?.id,
                         isPlaying = isPlaying,
                         onQueryChange = onQueryChange,
-                        onPlayTrack = playTrack,
                         onStartRadio = { track -> PlayerManager.startRadio(track) },
                         likedIds = likedIds,
                         dislikedIds = dislikedIds,

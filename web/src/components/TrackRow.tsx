@@ -25,6 +25,7 @@ export function TrackRow({
   index,
   onPlayNext,
   showIndex = true,
+  radioOnPlay = false,
 }: {
   track: Track;
   context: Track[];
@@ -33,6 +34,8 @@ export function TrackRow({
   onPlayNext?: (track: Track) => void;
   /** Hide the leading number (used inside dense lists). */
   showIndex?: boolean;
+  /** Search results start a station instead of queueing name matches. */
+  radioOnPlay?: boolean;
 }) {
   const { current, isPlaying, playTrack, toggle, startRadio, enqueueNext } = usePlayer();
   const { isLiked, isDisliked, toggleLike, toggleDislike } = useTaste();
@@ -47,7 +50,7 @@ export function TrackRow({
         disliked ? ' disliked' : ''
       }`}
     >
-      <button className="track-row-main" onClick={() => (active ? toggle() : playTrack(track, context))}>
+      <button className="track-row-main" onClick={() => (active ? toggle() : radioOnPlay ? startRadio(track) : playTrack(track, context))}>
         {active && isPlaying ? (
           <span className="eq" aria-hidden>
             <i />

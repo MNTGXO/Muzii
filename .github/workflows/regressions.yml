@@ -1,0 +1,30 @@
+name: Playback and queue regressions
+on:
+  push:
+    branches: [mnbots]
+  pull_request:
+    paths: ['web/**', 'worker/**', 'tests/**', '.github/workflows/regressions.yml']
+permissions:
+  contents: read
+jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            worker/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npm ci
+        working-directory: worker
+      - run: npm run types
+        working-directory: worker

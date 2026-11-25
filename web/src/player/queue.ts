@@ -118,14 +118,14 @@ function normLang(value?: string): string {
  *
  * A known-but-different language is the one thing we never want: it is the
  * "Malayalam song → Telugu song" jump that makes a station feel random.
- * Unknown ('') is allowed, because most catalogs don't tag everything and
- * dropping those would empty the queue.
+ * When the seed language is known, an unknown candidate is not evidence of
+ * a match; a shorter queue is safer than a wrong-language song.
  */
 export function languageOk(track: Track, language?: string): boolean {
   const seed = normLang(language);
   if (!seed) return true;
   const trackLang = normLang(track.language);
-  if (!trackLang) return true;
+  if (!trackLang) return false;
   return trackLang === seed || trackLang.includes(seed) || seed.includes(trackLang);
 }
 
@@ -210,30 +210,20 @@ export function localRadio(
   const seedArtist = (seed.artist.split(/,|&|feat\.?|ft\.?/i)[0] ?? seed.artist)
     .trim()
     .toLowerCase();
-  // Keep the feel even on the fallback path: a melody must not be followed by
-  // a DJ remix just because it shares an artist. Tracks far from the seed's
-  // energy are dropped when enough in-lane songs remain.
-  const sameLane = (t: Track) => {
-    const gap = energyGap(seed, t);
-    if (gap !== undefined && gap >= 0.6) return false;
-    // Era: a 2016 song has no business in a 1996 lane.
-    if (seed.year && t.year && Math.abs(seed.year - t.year) > ERA_SPAN) return false;
-    // Style: a devotional chant is a different kind of recording.
-    if (isDevotional(seed) !== isDevotional(t)) return false;
-    return true;
-  };
-  const inLane = catalog.filter(sameLane);
-  const pool = inLane.length >= limit ? inLane : catalog;
-
-  const sameArtist = pool.filter(
-    (t) => t.artist.toLowerCase().includes(seedArtist) && seedArtist.length > 1,
+  // Do not mix devotional and non-devotional tracks, or known different
+  // languages, just to fill the queue. Unknown energy is not treated as a
+  // mismatch; energy and era are soft preferences, never hard exclusions.
+  const seedLanguage = normLang(seed.language);
+  const pool = catalog.filter(t =>
+    isDevotional(seed) === isDevotional(t) &&
+    (!seedLanguage || (t.language && normLang(t.language) === seedLanguage)),
   );
-  const rest = pool.filter((t) => !sameArtist.includes(t));
-  // Interleave so a single-artist catalog doesn't block the rest.
-  const mixed: Track[] = [];
-  for (let i = 0; i < Math.max(sameArtist.length, rest.length); i++) {
-    if (i < sameArtist.length) mixed.push(sameArtist[i]);
-    if (i < rest.length) mixed.push(rest[i]);
-  }
-  return pickFresh(mixed, history).slice(0, limit);
+  const scored = pool.map((track, order) => {
+    const gap = energyGap(seed, track);
+    const era = seed.year && track.year ? Math.abs(seed.year - track.year) : 0;
+    const artist = track.artist.toLowerCase().includes(seedArtist) && seedArtist.length > 1;
+    const composer = seed.composer && track.composer && seed.composer.toLowerCase() === track.composer.toLowerCase();
+    return { track, order, score: (artist ? 40 : 0) + (composer ? 50 : 0) - (gap === undefined ? 0 : gap * 90) - Math.min(era * 2, 40) };
+  }).sort((a, b) => b.score - a.score || a.order - b.order);
+  return pickFresh(scored.map(item => item.track), history).slice(0, limit);
 }

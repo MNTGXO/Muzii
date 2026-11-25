@@ -44,6 +44,23 @@ async function main() {
   attempted = [];
   await streamWithCatalogFallback(new Request('https://example.test/api/stream/video123', { headers: { Range: 'bytes=0-100' } }), 'video123', [saavn, yt], ctx, success);
   assert.deepEqual(attempted, ['youtube:video123']);
+  // JioSaavn failures must search an alternate provider using metadata, not
+  // hand the JioSaavn ID to YouTube as if it were a video ID.
+  const alternate = track('video-real', 'Pularikalo', 'Gopi Sundar');
+  const youtubeSearch = { name: 'youtube', search: async () => [track('wrong', 'Pularikalo', 'Someone Else'), alternate] } as unknown as MusicProvider;
+  attempted = [];
+  const originalFailed = await streamWithCatalogFallback(request, 'js:broken', [saavn, youtubeSearch], ctx, async (_req, provider, id) => {
+    attempted.push(`${provider.name}:${id}`);
+    return new Response(null, { status: provider.name === 'jiosaavn' ? 502 : 200 });
+  });
+  assert.equal(originalFailed?.status, 200);
+  assert.deepEqual(attempted, ['jiosaavn:js:broken', 'youtube:video-real']);
+  const mismatch = { name: 'youtube', search: async () => [track('bad', 'Pularikalo (Remix)', 'Gopi Sundar')] } as unknown as MusicProvider;
+  attempted = [];
+  assert.equal(await streamWithCatalogFallback(request, 'js:broken', [saavn, mismatch], ctx, async (_req, provider, id) => {
+    attempted.push(`${provider.name}:${id}`); return new Response(null, { status: 502 });
+  }), null);
+  assert.deepEqual(attempted, ['jiosaavn:js:broken']);
   const unavailable = { name: 'jiosaavn', search: async () => { throw new Error('offline'); } } as unknown as MusicProvider;
   assert.equal(await findCatalogMatch(unavailable, 'Unique title', 'Singer'), null);
   attempted = [];

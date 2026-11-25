@@ -50,9 +50,11 @@ export async function searchTracks(q: string): Promise<Track[]> {
     return await apiFetch<Track[]>(`/api/search?q=${encodeURIComponent(query)}`);
   } catch {
     const s = query.toLowerCase();
-    return DEMO_TRACKS.filter((t) =>
+    const demo = DEMO_TRACKS.filter((t) =>
       [t.title, t.artist, t.album].join(' ').toLowerCase().includes(s),
     );
+    if (demo.length) return demo;
+    throw new Error('Search service unavailable');
   }
 }
 
@@ -92,7 +94,7 @@ export function streamUrl(track: Track): string {
   const base = `${API_BASE}/api/stream/${encodeURIComponent(track.id)}`;
   // Existing YouTube imports already contain these fields; they can be
   // resolved against the catalogue without modifying the local playlist.
-  if (!track.id.startsWith('js:') && track.streamUrl.startsWith('ytmusic://')) {
+  if (track.id.startsWith('js:') || track.streamUrl.startsWith('ytmusic://')) {
     const params = new URLSearchParams({ title: track.title, artist: track.artist });
     return `${base}?${params.toString()}`;
   }
@@ -129,6 +131,8 @@ export async function getRadio(
   if (seed.language) params.set('lang', seed.language);
   if (seed.composer) params.set('composer', seed.composer);
   if (seed.year) params.set('year', String(seed.year));
+  if (seed.album) params.set('album', seed.album);
+  if (seed.durationSec > 0) params.set('duration', String(seed.durationSec));
   if (exclude.length) params.set('exclude', exclude.slice(-40).join(','));
   taste?.forEach((value, key) => {
     if (value) params.set(key, value);
