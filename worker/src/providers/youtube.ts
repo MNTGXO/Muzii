@@ -328,27 +328,19 @@ function findFirst(node: any, key: string, depth = 0): any {
 
 /** Try each metadata client until one returns a non-empty result. */
 async function searchWithFallback(query: string, params?: string): Promise<Track[]> {
-  let lastError: unknown = null;
-  for (const client of METADATA_CLIENTS) {
-    try {
+  // A failed metadata client must not hold up every other client in series.
+  try {
+    return await Promise.any(METADATA_CLIENTS.map(async client => {
       const data = await innerTubePost(client, 'search', {
-        ...innerTubeContext(client),
-        query,
-        ...(params ? { params } : {}),
+        ...innerTubeContext(client), query, ...(params ? { params } : {}),
       });
       const tracks = parseSearchItems(data);
-      if (tracks.length) return tracks;
-    } catch (err) {
-      lastError = err;
-    }
+      if (!tracks.length) throw new Error('empty search');
+      return tracks;
+    }));
+  } catch {
+    return searchViaPiped(query).catch(() => [] as Track[]);
   }
-  // InnerTube gave nothing (or errored): try public Piped/Invidious mirrors.
-  // Google increasingly blocks datacenter IPs, which is exactly what a
-  // Cloudflare Worker egresses from.
-  const mirrored = await searchViaPiped(query).catch(() => [] as Track[]);
-  if (mirrored.length) return mirrored;
-  if (lastError) throw lastError;
-  return [];
 }
 
 const CATALOG_QUERIES = [

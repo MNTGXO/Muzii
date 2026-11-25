@@ -175,7 +175,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setBuffering(false);
       setIsPlaying(false);
       setError('This track is taking too long to load. Try again or choose another song.');
-    }, 20_000);
+    }, 30_000);
   }, [clearBufferGuard]);
 
   const persisted = useRef(loadPersisted());
@@ -234,6 +234,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [disliked, setDisliked] = useState<string[]>([]);
   /** Guards against several `ended`/`next` events all fetching radio at once. */
   const extendLock = useRef(false);
+  // Invalidates in-flight recommendations when the listener starts a new queue.
+  const queueGeneration = useRef(0);
 
   const current = queue[index] ?? null;
   const stateRef = useRef({ queue, index, shuffle, repeat, queueSource });
@@ -285,6 +287,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const extendQueue = useCallback(async (fromTrack: Track, count = 8) => {
     if (extendLock.current) return;
     extendLock.current = true;
+    const generation = queueGeneration.current;
     setExtending(true);
     try {
       const { queue: q } = stateRef.current;
@@ -296,7 +299,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // language. The Worker already filters both, but the local fallback
       // below reads the whole catalog - without this the offline path can
       // drop a Telugu song into a Malayalam station.
-      const seedLanguage = fromTrack.language ?? taste?.lang?.[0];
+      const seedLanguage = fromTrack.language;
       const removed = removedRef.current;
       const usable = (tracks: Track[]) =>
         sameLanguage(
@@ -323,9 +326,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const local = localRadio(fromTrack, catalog, historyRef.current, count);
         fresh = pickFresh([...fresh, ...usable(local)], historyRef.current, q);
       }
-      if (!fresh.length) return;
+      if (!fresh.length || generation !== queueGeneration.current) return;
 
       setQueue((prev) => {
+        if (generation !== queueGeneration.current) return prev;
         // Re-check against the latest queue: another event may have appended.
         const extra = pickFresh(fresh, historyRef.current, prev);
         return extra.length ? [...prev, ...extra] : prev;
@@ -334,6 +338,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } finally {
       extendLock.current = false;
       setExtending(false);
+      // A different queue may have been started while this request was in
+      // flight. Begin its station now instead of appending stale results.
+      if (generation !== queueGeneration.current) {
+        const state = stateRef.current;
+        const seed = state.queue[state.index];
+        if (seed && state.queueSource !== 'jam' && state.queue.length - state.index <= 3) {
+          void extendQueue(seed, count);
+        }
+      }
     }
   }, []);
 
@@ -558,7 +571,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       void extendQueue(current, 8);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, queue.length, queueSource]);
+  }, [index, queue.length, queueSource, current?.id]);
 
   // A song the listener just disliked must leave immediately — both from
   // the queue and from the speakers (this is what "don't use that song in
@@ -705,6 +718,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const playQueue = useCallback(
     (tracks: Track[], startIndex = 0, source: QueueSource = 'manual') => {
       if (!tracks.length) return;
+      queueGeneration.current++;
       const anchor = tracks[Math.max(0, Math.min(startIndex, tracks.length - 1))];
       const list = dedupeContext(tracks, anchor?.id);
       const safe = Math.max(0, list.findIndex((t) => t.id === anchor?.id));
@@ -717,6 +731,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const playTrack = useCallback(
     (track: Track, context?: Track[]) => {
+      queueGeneration.current++;
       const raw = context && context.length ? context : [track];
       const list = dedupeContext(raw, track.id);
       const i = list.findIndex((t) => t.id === track.id);
@@ -732,6 +747,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Radio starts with just the seed: the extension effect fills the rest
       // with same-artist / same-vibe tracks, so the very next song is never
       // the one you just picked.
+      queueGeneration.current++;
       setQueueSource('radio');
       setQueue([track]);
       setIndex(0);

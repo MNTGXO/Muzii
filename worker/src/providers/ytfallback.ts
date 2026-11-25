@@ -63,64 +63,27 @@ async function getJson(url: string): Promise<any> {
 
 /** Search through Piped mirrors. Returns [] when every mirror fails. */
 export async function searchViaPiped(query: string): Promise<Track[]> {
-  for (const base of PIPED_INSTANCES) {
-    try {
-      const filter = 'music_songs';
-      const data = await getJson(
-        `${base}/search?q=${encodeURIComponent(query)}&filter=${filter}`,
-      );
-      const items: any[] = Array.isArray(data?.items) ? data.items : [];
-      const tracks = items
-        .filter((it) => it && (it.type === 'stream' || it.url?.includes('watch')))
-        .map((it) => {
-          const id = videoIdFromUrl(it.url);
-          if (!id) return null;
-          return trackFromId(
-            id,
-            it.title ?? 'Unknown title',
-            it.uploaderName ?? '',
-            it.album ?? '',
-            Number(it.duration ?? 0),
-            it.thumbnail,
-          );
-        })
-        .filter((t): t is Track => t !== null);
-
-      if (tracks.length) return tracks;
-
-      // Some mirrors answer but with an empty shelf — fall through to the
-      // Invidious search below rather than giving up.
-      break;
-    } catch {
-      // Try the next mirror.
-    }
-  }
-
-  for (const base of INVIDIOUS_INSTANCES) {
-    try {
-      const data = await getJson(
-        `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
-      );
-      const items: any[] = Array.isArray(data) ? data : [];
-      const tracks = items
-        .filter((it) => it?.videoId)
-        .map((it) =>
-          trackFromId(
-            it.videoId,
-            it.title ?? 'Unknown title',
-            it.author ?? '',
-            '',
-            Number(it.lengthSeconds ?? 0),
-            `https://i.ytimg.com/vi/${it.videoId}/hqdefault.jpg`,
-          ),
-        );
-      if (tracks.length) return tracks;
-    } catch {
-      // Try the next instance.
-    }
-  }
-
-  return [];
+  const piped = PIPED_INSTANCES.map(async base => {
+    const data = await getJson(`${base}/search?q=${encodeURIComponent(query)}&filter=music_songs`);
+    const items: any[] = Array.isArray(data?.items) ? data.items : [];
+    const tracks = items.filter(it => it && (it.type === 'stream' || it.url?.includes('watch')))
+      .map(it => {
+        const id = videoIdFromUrl(it.url);
+        return id ? trackFromId(id, it.title ?? 'Unknown title', it.uploaderName ?? '', it.album ?? '', Number(it.duration ?? 0), it.thumbnail) : null;
+      }).filter((t): t is Track => t !== null);
+    if (!tracks.length) throw new Error('empty search');
+    return tracks;
+  });
+  const invidious = INVIDIOUS_INSTANCES.map(async base => {
+    const data = await getJson(`${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`);
+    const items: any[] = Array.isArray(data) ? data : [];
+    const tracks = items.filter(it => it?.videoId).map(it =>
+      trackFromId(it.videoId, it.title ?? 'Unknown title', it.author ?? '', '', Number(it.lengthSeconds ?? 0), `https://i.ytimg.com/vi/${it.videoId}/hqdefault.jpg`));
+    if (!tracks.length) throw new Error('empty search');
+    return tracks;
+  });
+  try { return await Promise.any([...piped, ...invidious]); }
+  catch { return []; }
 }
 
 /** Resolve through the first working mirror without serial timeout delays. */

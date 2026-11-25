@@ -15,7 +15,7 @@ import type { Track } from './types';
  *  2. Composer - Harris Jayaraj tracks sound like Harris Jayaraj.
  *  3. Seed artist - same singer is the original "this lane" signal.
  *  4. Era - within ~12 years keeps a station from jumping decades.
- *  5. Title words - a weak "sounds like" probe.
+ *  5. Provider recommendations - related music, never title similarity.
  *
  * Taste profile (stored client-side, forwarded here):
  *  - `avoid` - disliked ids, dropped outright.
@@ -224,6 +224,8 @@ export interface RadioRequest {
   seedLanguage?: string;
   seedComposer?: string;
   seedYear?: number;
+  seedAlbum?: string;
+  seedDurationSec?: number;
   /** The songs the listener already loves/dislikes. */
   taste?: TasteProfile;
 }
@@ -235,6 +237,8 @@ interface Seed {
   language?: string;
   composer?: string;
   year?: number;
+  album?: string;
+  durationSec?: number;
 }
 
 /**
@@ -252,7 +256,7 @@ function scoreTrack(
 
   // 0. Energy - "keep the feel". Without this a melody and a DJ remix of the
   //    same song by the same composer scored identically.
-  const seedEnergy = energyOf({ title: seed.title });
+  const seedEnergy = energyOf({ title: seed.title, album: seed.album, durationSec: seed.durationSec });
   const trackEnergy = energyOf(track);
   if (seedEnergy !== undefined && trackEnergy !== undefined) {
     const gap = Math.abs(seedEnergy - trackEnergy);
@@ -299,37 +303,34 @@ export async function buildRadio(
   const limit = Math.min(Math.max(request.limit ?? 12, 1), 40);
   const artist = primaryArtistOf(seedArtist);
   const taste = request.taste ?? {};
-  const seedLanguage = normLang(request.seedLanguage) || undefined;
-  const seedComposer = request.seedComposer?.trim() || undefined;
-  const seedYear = request.seedYear;
+  // JioSaavn can enrich older seed records that lack language/composer.
+  const owner = chain.find(p => seedId.startsWith('js:') && p.name === 'jiosaavn');
+  const details = owner && !request.seedLanguage
+    ? await owner.getTrack(seedId).catch(() => null) : null;
+  const seedLanguage = normLang(request.seedLanguage || details?.language) || undefined;
+  const seedComposer = request.seedComposer?.trim() || details?.composer || undefined;
+  const seedYear = request.seedYear || details?.year;
 
-  const provider = chain[0] ?? null;
+  const provider = chain.find(p => seedId.startsWith('js:') ? p.name === 'jiosaavn' : p.name === 'youtube') ?? chain[0] ?? null;
   if (!provider) return [];
 
-  // Query several lanes in parallel. Language goes into the query itself so
-  // the catalog filters - far more reliable than hoping a generic result set
-  // happens to contain enough of the right language to rank.
+  // Related tracks are the strongest available signal. Metadata-based
+  // searches broaden the pool without querying the seed's title words.
   const queries: string[] = [];
-  if (seedLanguage) queries.push(`${seedLanguage} songs`);
-  if (seedComposer) queries.push(`${seedComposer} hits`);
-  queries.push(`${artist} songs`);
   if (seedLanguage) {
-    queries.push(
-      [seedLanguage, 'hits', seedYear ? String(seedYear) : ''].join(' ').trim(),
-    );
+    const energy = energyOf({ title: seedTitle, album: request.seedAlbum || details?.album, durationSec: request.seedDurationSec || details?.durationSec });
+    queries.push(`${seedLanguage} ${energy !== undefined && energy < 0.4 ? 'melody' : 'songs'}`);
+    if (seedYear) queries.push(`${seedLanguage} ${seedYear} songs`);
   }
-
-  const words = seedTitle
-    .replace(/\((?:[^)]*)\)|\[[^\]]*\]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .slice(0, 2);
-  if (words.length) queries.push(words.join(' '));
-
-  const uniqueQueries = [...new Set(queries)].slice(0, 5);
-  const results = await Promise.all(
-    uniqueQueries.map((q) => provider.search(q).catch(() => [] as Track[])),
-  );
+  if (seedComposer) queries.push(`${seedLanguage || ''} ${seedComposer} songs`.trim());
+  if (artist && artist.toLowerCase() !== 'unknown artist') queries.push(`${seedLanguage || ''} ${artist} songs`.trim());
+  const uniqueQueries = [...new Set(queries)].slice(0, 4);
+  const [suggestions, ...results] = await Promise.all([
+    owner?.recommendations?.(seedId).catch(() => [] as Track[]) ?? Promise.resolve([] as Track[]),
+    ...uniqueQueries.map((q) => provider.search(q).catch(() => [] as Track[])),
+  ]);
+  const recommended = new Set(suggestions.map(t => t.id));
+  results.unshift(suggestions);
 
   // ---- filtering ----------------------------------------------------------
   const avoidIds = new Set(taste.avoid ?? []);
@@ -364,6 +365,8 @@ export async function buildRadio(
     language: seedLanguage,
     composer: seedComposer,
     year: seedYear,
+    album: request.seedAlbum || details?.album,
+    durationSec: request.seedDurationSec || details?.durationSec,
   };
 
   const scored: { track: Track; score: number }[] = [];
@@ -378,7 +381,7 @@ export async function buildRadio(
       seenIds.add(track.id);
       scored.push({
         track,
-        score: scoreTrack(track, seed, lovedArtists, lovedComposers),
+        score: scoreTrack(track, seed, lovedArtists, lovedComposers) + (recommended.has(track.id) ? 85 : 0),
       });
     }
   }
@@ -392,54 +395,15 @@ export async function buildRadio(
     )
     .sort((a, b) => b.score - a.score);
 
-  /*
-   * Era as a FILTER, not a score nudge.
-   *
-   * This is the "make it like YT Music" fix. Era used to contribute +20 / -25
-   * inside a 12-year window, which is far too weak to beat an artist (+70) or
-   * composer (+55) match - so a 2016 song and a 1975 devotional could both
-   * land in a queue seeded from a 1996 melody. Measured against the real
-   * screenshot, our queue spanned 41 years where YT Music's spanned 9.
-   *
-   * A candidate must now be within ERA_SPAN years of the seed. The span is
-   * generous on purpose: YT's own queue covered 1992-2001 from a 1996 seed,
-   * so anything tighter would throw away good matches.
-   */
-  const ERA_SPAN = 15;
-  const eraInLane = (track: Track) => nearEra(track.year, seed.year, ERA_SPAN);
-  const seedIsDevotional = isDevotional({ title: seedTitle });
-  /** Style gate: a chant never follows a film melody, or vice versa. */
-  const styleInLane = (track: Track) =>
-    seedIsDevotional === isDevotional(track);
-
-  const withEra = ranked.filter(({ track }) => eraInLane(track));
-  const withStyle = withEra.filter(({ track }) => styleInLane(track));
-  /*
-   * Prefer the fully-filtered set, but never dead-end a station: fall back to
-   * era-only, then to the unfiltered ranking. A thin catalog must still play.
-   */
-  const coherent =
-    withStyle.length >= limit ? withStyle : withEra.length >= limit ? withEra : ranked;
-  const rankedAll = coherent;
-
-  // Hard language preference. Score alone is not enough: a wrong-language
-  // song still lands in the top band when the catalog is thin, and shuffling
-  // the band would then promote it. If there are enough in-language songs,
-  // the out-of-language ones are dropped outright. They are kept only as a
-  // last resort so a station can never dead-end.
+  // Never fill a short station with a known different language or a
+  // devotional/non-devotional mismatch. Returning fewer songs is safer than
+  // silently crossing lanes. Unknown language is not proof of a match.
   const seedLang = normLang(seed.language);
-  const inLanguage = seedLang
-    ? rankedAll.filter(({ track }) => !track.language || sameLang(track.language, seedLang))
-    : rankedAll;
-  const offLanguage = seedLang
-    ? rankedAll.filter(({ track }) => track.language && !sameLang(track.language, seedLang))
-    : [];
-  // Pad with other languages ONLY if the station would otherwise be too
-  // short to fill a queue. On a real catalog this never triggers (there are
-  // far more than `limit` songs in any language); it exists so a thin
-  // catalog still plays instead of dead-ending.
-  const rankedFinal =
-    inLanguage.length >= limit ? inLanguage : [...inLanguage, ...offLanguage];
+  const seedIsDevotional = isDevotional({ title: seedTitle, album: seed.album });
+  const rankedFinal = ranked.filter(({ track }) =>
+    (!seedLang || sameLang(track.language, seedLang)) &&
+    seedIsDevotional === isDevotional(track),
+  );
 
   // Keep variety WITHOUT destroying the ranking: bucket candidates by score
   // band, shuffle inside each band (deterministic), then concatenate the

@@ -65,9 +65,10 @@ class MuziiViewModel(
 
         // The player asks for more songs when a radio queue runs dry.
         PlayerManager.onQueueExhausted = { seed, played ->
+            val generation = PlayerManager.queueGeneration
             viewModelScope.launch {
                 val more = repository.radio(seed, played)
-                PlayerManager.appendToQueue(more)
+                PlayerManager.appendToQueue(more, generation)
             }
         }
     }

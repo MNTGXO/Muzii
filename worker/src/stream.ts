@@ -31,30 +31,25 @@ export async function handleStream(
   id: string,
   ctx: ExecutionContext,
 ): Promise<Response> {
-  // One provider call: YouTube resolves a fresh URL from the video id,
-  // demo returns the track's stable streamUrl.
-  let upstreamUrlStr: string | null;
-  try {
-    upstreamUrlStr = await provider.resolveStreamUrl(id);
-  } catch {
-    upstreamUrlStr = null;
-  }
-  if (!upstreamUrlStr) {
-    return streamError('stream-unavailable', 502);
-  }
-
-  const upstreamUrl = new URL(upstreamUrlStr);
-  if (isAdRequest(upstreamUrl)) return adBlockedResponse(upstreamUrl);
-
   const range = request.headers.get('Range');
   const cache = caches.default;
-  // Cache by track id — upstream URLs may expire (YouTube Music).
-  const cacheKey = new Request(`https://muzii.cache/stream/${id}`, { method: 'GET' });
-
+  // Provider identity matters when the same source ID is retried elsewhere.
+  const cacheKey = new Request(`https://muzii.cache/stream/${encodeURIComponent(provider.name)}/${encodeURIComponent(id)}`, { method: 'GET' });
   if (!range) {
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
   }
+
+  let upstreamUrl: URL;
+  try {
+    const resolved = await provider.resolveStreamUrl(id);
+    if (!resolved) return streamError('stream-unavailable', 502);
+    upstreamUrl = new URL(resolved);
+    if (upstreamUrl.protocol !== 'https:' && upstreamUrl.protocol !== 'http:') return streamError('invalid-stream-url', 502);
+  } catch {
+    return streamError('stream-unavailable', 502);
+  }
+  if (isAdRequest(upstreamUrl)) return adBlockedResponse(upstreamUrl);
 
   const upstreamHeaders = new Headers();
   // googlevideo validates the UA of URLs issued by InnerTube; other CDNs

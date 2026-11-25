@@ -88,7 +88,7 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
         languages: String = TasteStore.languagesParam(),
     ): List<Track> {
         val remote = withRetry {
-            api.getCatalog(languages).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
+            api.getCatalog(languages).map { it.copy(streamUrl = proxiedStreamUrl(it)) }
         }
         usingDemoCatalog = remote.isFailure
         lastError = if (remote.isFailure) describe(remote.exceptionOrNull()) else null
@@ -103,12 +103,12 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
         // Playlist tracks must stream through the Worker too (the demo
         // fallback above already points at real URLs, so it is left alone).
         return remote.getOrThrow().map { pl ->
-            pl.copy(tracks = pl.tracks?.map { it.copy(streamUrl = proxiedStreamUrl(it.id)) })
+            pl.copy(tracks = pl.tracks?.map { it.copy(streamUrl = proxiedStreamUrl(it)) })
         }
     }
 
     suspend fun search(query: String): List<Track> = withRetry {
-        api.search(query).map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
+        api.search(query).map { it.copy(streamUrl = proxiedStreamUrl(it)) }
     }.getOrElse {
         DemoCatalog.TRACKS.filter {
             it.title.contains(query, ignoreCase = true) ||
@@ -144,28 +144,48 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
         val disliked = TasteStore.dislikedIds.value.toSet()
         val usable = remote
             .filter { it.id != seed.id && it.id !in disliked }
-            .map { it.copy(streamUrl = proxiedStreamUrl(it.id)) }
+            .map { it.copy(streamUrl = proxiedStreamUrl(it)) }
         if (usable.isNotEmpty()) return usable
 
-        // Local fallback: same artist first, then the rest of the catalog.
-        val artist = seed.artist.split(",", "&", "feat.", "ft.").firstOrNull()?.trim() ?: seed.artist
-        val catalog = runCatching { getCatalog() }.getOrElse { DemoCatalog.TRACKS }
+        // Keep the language and devotional category even if the catalogue
+        // is thin. Rank energy, era and credits softly instead of padding
+        // a station with unrelated songs or sample tracks.
+        val artist = seed.artist.split(",", "&", "feat.", "ft.").firstOrNull()?.trim().orEmpty()
+        val catalog = runCatching { getCatalog() }.getOrElse { emptyList() }
+        if (usingDemoCatalog && !seed.id.startsWith("sh-")) return emptyList()
         val playedIds = played.toSet()
-        val seedLanguage = seed.language?.lowercase()
+        val seedLanguage = seed.language?.trim()?.lowercase()
         return catalog
             .filter { track ->
-                track.id != seed.id &&
-                    track.id !in playedIds &&
-                    track.id !in TasteStore.dislikedIds.value &&
-                    // Never jump language: the fallback reads the whole
-                    // catalog, so it has to apply the same guard the
-                    // Worker does.
-                    (seedLanguage == null ||
-                        track.language == null ||
-                        track.language.lowercase() == seedLanguage)
+                track.id != seed.id && track.id !in playedIds && track.id !in disliked &&
+                    (seedLanguage.isNullOrBlank() || track.language?.trim()?.lowercase() == seedLanguage) &&
+                    isDevotional(track) == isDevotional(seed)
             }
-            .sortedByDescending { it.artist.contains(artist, ignoreCase = true) }
+            .sortedByDescending { track ->
+                var score = 0
+                if (artist.isNotBlank() && track.artist.contains(artist, ignoreCase = true)) score += 40
+                if (!seed.composer.isNullOrBlank() && seed.composer.equals(track.composer, ignoreCase = true)) score += 50
+                val seedEnergy = energy(seed)
+                val trackEnergy = energy(track)
+                if (seedEnergy != 0 && trackEnergy != 0 && seedEnergy != trackEnergy) score -= 90
+                val sy = seed.year
+                val ty = track.year
+                if (sy != null && ty != null) score -= (kotlin.math.abs(sy - ty) * 2).coerceAtMost(40)
+                score
+            }
             .take(10)
+    }
+
+    private fun isDevotional(track: Track): Boolean {
+        val text = "${track.title} ${track.album}".lowercase()
+        return listOf("bhajan", "devotional", "harivarasanam", "suprabhatam", "kirtan", "ashtakam", "stotram", "chalisa", "aarti", "mantra", "hymn", "qawwali", "shloka").any { text.contains(it) }
+    }
+
+    private fun energy(track: Track): Int {
+        val text = "${track.title} ${track.album}".lowercase()
+        val high = listOf("remix", "dj", "club", "edm", "dance", "mashup", "party").any { text.contains(it) }
+        val low = listOf("melody", "acoustic", "lullaby", "sad", "mellow", "soft", "romantic", "soulful").any { text.contains(it) }
+        return if (high && !low) 1 else if (low && !high) -1 else 0
     }
 
     /**
@@ -173,6 +193,13 @@ class MuziiRepository(private val api: MuziiApi = MuziiApiFactory.create()) {
      * handling). The id is appended to a stable prefix, so calling this twice
      * on an already-proxied URL must not nest another prefix.
      */
-    private fun proxiedStreamUrl(id: String): String =
-        BuildConfig.API_BASE_URL.trimEnd('/') + "/api/stream/" + id.trimStart('/')
+    private fun proxiedStreamUrl(track: Track): String {
+        val builder = android.net.Uri.parse(BuildConfig.API_BASE_URL.trimEnd('/'))
+            .buildUpon().appendPath("api").appendPath("stream").appendPath(track.id)
+        if (track.id.startsWith("js:") || track.streamUrl.startsWith("ytmusic://")) {
+            builder.appendQueryParameter("title", track.title)
+                .appendQueryParameter("artist", track.artist)
+        }
+        return builder.build().toString()
+    }
 }
