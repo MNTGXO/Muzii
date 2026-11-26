@@ -146,6 +146,13 @@ jobs:
           fi
           echo "Signed with the stable Muzii key - in-place updates will work."
 
+      # Instrumentation tests run on an Android device/emulator; at least
+      # compile them on each PR so regressions cannot silently stop building.
+      - name: Compile Android UI tests
+        if: github.event_name == 'pull_request'
+        working-directory: android
+        run: gradle assembleDebugAndroidTest
+
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:

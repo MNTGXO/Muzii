@@ -124,6 +124,7 @@ fun NowPlayingScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color.Black)
             .background(
                 // Three stops instead of two: the single hard step from a
                 // saturated colour to pure black read as a band across the
