@@ -28,7 +28,7 @@ jobs:
           api-level: 29
           arch: x86_64
           disable-animations: true
-          script: bash -c 'set -o pipefail; cd android; gradle connectedDebugAndroidTest --stacktrace 2>&1 | tee /tmp/muzii-ui-test.log'
+          script: bash -c 'set -o pipefail; cd android; gradle connectedDebugAndroidTest 2>&1 | tee /tmp/muzii-ui-test.log'
       - name: Report emulator test failures
         if: failure()
         run: |
