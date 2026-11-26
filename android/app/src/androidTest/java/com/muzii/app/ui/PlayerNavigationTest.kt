@@ -6,6 +6,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.muzii.app.data.model.Track
 import com.muzii.app.playback.PlayerManager
@@ -40,7 +42,11 @@ class PlayerNavigationTest {
         compose.onNodeWithText("Search").performClick()
         compose.onNodeWithText("Find something to play").assertIsDisplayed()
         compose.onNodeWithText(first.title).performClick() // mini player
-        compose.onNodeWithContentDescription("Up next").assertIsDisplayed()
+        try {
+            compose.onNodeWithContentDescription("Up next").assertIsDisplayed()
+        } catch (error: AssertionError) {
+            throw AssertionError("Player not visible: ${compose.onRoot().printToString()}", error)
+        }
         compose.onNodeWithText("Find something to play").assertDoesNotExist()
         compose.onNodeWithText("Search").assertDoesNotExist()
 
