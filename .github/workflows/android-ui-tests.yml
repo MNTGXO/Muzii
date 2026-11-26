@@ -35,4 +35,4 @@ jobs:
           if [ -f /tmp/muzii-ui-test.log ]; then
             python3 -c "from pathlib import Path; s=Path('/tmp/muzii-ui-test.log').read_text()[-14000:]; print('::error title=Android UI test::'+s.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
           fi
-          find android/app/build/outputs/androidTest-results -name '*.xml' -type f -exec sh -c 'for f; do echo "::error title=Instrumentation result::$(cat "$f" | tr "\n" " " | cut -c1-12000)"; done' sh {} + 2>/dev/null || true
+          python3 -c "import pathlib,xml.etree.ElementTree as E; files=pathlib.Path('android/app/build/outputs/androidTest-results').rglob('*.xml'); messages=[(node.text or node.get('message') or '') for f in files for node in E.parse(f).iter('failure')]; print('::error title=Instrumentation failure::'+('\n'.join(messages)[:12000]).replace('%','%25').replace('\r','%0D').replace('\n','%0A')) if messages else None"
