@@ -6,6 +6,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -41,7 +43,7 @@ class PlayerNavigationTest {
 
         compose.onNodeWithText("Search").performClick()
         compose.onNodeWithText("Find something to play").assertIsDisplayed()
-        compose.onNodeWithText(first.title).performClick() // mini player
+        compose.onNodeWithText(first.title).performSemanticsAction(SemanticsActions.OnClick) // mini player
         try {
             compose.onNodeWithContentDescription("Up next").assertIsDisplayed()
         } catch (error: AssertionError) {
