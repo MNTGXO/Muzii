@@ -112,17 +112,15 @@ fun MuziiNav(
         PlayerManager.playQueue(ctx, ctx.indexOf(track))
     }
 
-    /*
-     * System Back.
-     *
-     * There was no BackHandler anywhere, so pressing back while the full
-     * player or Up Next was open closed the whole app — a jarring exit that
-     * lost the screen you were on. Peel overlays in the order they stack:
-     * now playing → queue → playlist → exit.
-     */
-    BackHandler(enabled = showNowPlaying) { showNowPlaying = false }
-    BackHandler(enabled = showQueue) { showQueue = false }
-    BackHandler(enabled = openPlaylistId != null) { openPlaylistId = null }
+    // Only the frontmost screen handles Back. Closing the queue opened from
+    // the full player returns to that player, then to the previous tab.
+    BackHandler(enabled = showQueue || showNowPlaying || openPlaylistId != null) {
+        when {
+            showQueue -> showQueue = false
+            showNowPlaying -> showNowPlaying = false
+            else -> openPlaylistId = null
+        }
+    }
 
     // First run: pick languages before the feed is built, so the home screen
     // is never populated with the wrong ones.
@@ -131,145 +129,148 @@ fun MuziiNav(
         return
     }
 
-    Scaffold(
-        containerColor = Color.Black,
-        bottomBar = {
-            Column {
-                currentTrack?.let { track ->
-                    MiniPlayerBar(
-                        track = track,
-                        isPlaying = isPlaying,
-                        buffering = buffering,
-                        onToggle = { PlayerManager.toggle() },
-                        onNext = { PlayerManager.next() },
-                        onPrev = { PlayerManager.prev() },
-                        onOpen = { showNowPlaying = true },
-                        liked = likedIds.contains(track.id),
-                        onToggleLike = { onToggleLike(track) },
-                    )
+    // Render exactly one full-screen surface. Composing these as siblings
+    // let transparent queue/player content and taps leak onto the tab below.
+    if (!showQueue && !(showNowPlaying && currentTrack != null)) {
+        Scaffold(
+            containerColor = Color.Black,
+            bottomBar = {
+                Column {
+                    currentTrack?.let { track ->
+                        MiniPlayerBar(
+                            track = track,
+                            isPlaying = isPlaying,
+                            buffering = buffering,
+                            onToggle = { PlayerManager.toggle() },
+                            onNext = { PlayerManager.next() },
+                            onPrev = { PlayerManager.prev() },
+                            onOpen = { showNowPlaying = true },
+                            liked = likedIds.contains(track.id),
+                            onToggleLike = { onToggleLike(track) },
+                        )
+                    }
+                    NavigationBar(containerColor = SurfaceDark) {
+                        NavigationBarItem(
+                            selected = tab == Tab.HOME,
+                            onClick = { tabOrdinal = Tab.HOME.ordinal },
+                            icon = { Icon(Icons.Filled.Home, contentDescription = null) },
+                            label = { Text(Tab.HOME.label) },
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.SEARCH,
+                            onClick = { tabOrdinal = Tab.SEARCH.ordinal },
+                            icon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                            label = { Text(Tab.SEARCH.label) },
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.LIBRARY,
+                            onClick = { tabOrdinal = Tab.LIBRARY.ordinal },
+                            icon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
+                            label = { Text(Tab.LIBRARY.label) },
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.JAM,
+                            onClick = { tabOrdinal = Tab.JAM.ordinal },
+                            icon = { Icon(Icons.Filled.Podcasts, contentDescription = null) },
+                            label = { Text(Tab.JAM.label) },
+                        )
+                    }
                 }
-                NavigationBar(containerColor = SurfaceDark) {
-                    NavigationBarItem(
-                        selected = tab == Tab.HOME,
-                        onClick = { tabOrdinal = Tab.HOME.ordinal },
-                        icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                        label = { Text(Tab.HOME.label) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == Tab.SEARCH,
-                        onClick = { tabOrdinal = Tab.SEARCH.ordinal },
-                        icon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        label = { Text(Tab.SEARCH.label) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == Tab.LIBRARY,
-                        onClick = { tabOrdinal = Tab.LIBRARY.ordinal },
-                        icon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
-                        label = { Text(Tab.LIBRARY.label) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == Tab.JAM,
-                        onClick = { tabOrdinal = Tab.JAM.ordinal },
-                        icon = { Icon(Icons.Filled.Podcasts, contentDescription = null) },
-                        label = { Text(Tab.JAM.label) },
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        Box(Modifier.padding(padding)) {
-            val playlist = openPlaylist
-            if (playlist != null) {
-                // Prefer the playlist's embedded tracks: YouTube playlist
-                // ids come from separate searches and are not in the
-                // catalog, so filtering rendered empty playlists.
-                val playlistTracks = playlist.tracks?.takeIf { it.isNotEmpty() }
-                    ?: playlist.trackIds.mapNotNull { id -> tracks.find { it.id == id } }
-                PlaylistScreen(
-                    playlist = playlist,
-                    tracks = playlistTracks,
-                    currentTrackId = currentTrack?.id,
-                    isPlaying = isPlaying,
-                    onBack = { openPlaylistId = null },
-                    onPlayTrack = playTrack,
-                    onStartRadio = { track -> PlayerManager.startRadio(track) },
-                    likedIds = likedIds,
-                    dislikedIds = dislikedIds,
-                    onToggleLike = onToggleLike,
-                    onToggleDislike = onToggleDislike,
-                    onShufflePlay = {
-                        // Start at a random track and turn shuffle on, which is
-                        // what "shuffle play" means on every music app.
-                        if (playlistTracks.isNotEmpty()) {
-                            PlayerManager.playQueue(playlistTracks, kotlin.random.Random.nextInt(playlistTracks.size))
-                            if (!shuffle) PlayerManager.toggleShuffle()
-                        }
-                    },
-                )
-            } else {
-                when (tab) {
-                    Tab.HOME -> HomeScreen(
-                        tracks = tracks,
-                        playlists = playlists,
+            },
+        ) { padding ->
+            Box(Modifier.padding(padding)) {
+                val playlist = openPlaylist
+                if (playlist != null) {
+                    // Prefer the playlist's embedded tracks: YouTube playlist
+                    // ids come from separate searches and are not in the
+                    // catalog, so filtering rendered empty playlists.
+                    val playlistTracks = playlist.tracks?.takeIf { it.isNotEmpty() }
+                        ?: playlist.trackIds.mapNotNull { id -> tracks.find { it.id == id } }
+                    PlaylistScreen(
+                        playlist = playlist,
+                        tracks = playlistTracks,
                         currentTrackId = currentTrack?.id,
                         isPlaying = isPlaying,
+                        onBack = { openPlaylistId = null },
                         onPlayTrack = playTrack,
-                        onOpenPlaylist = { openPlaylistId = it.id },
-                        onStartRadio = { track -> PlayerManager.startRadio(track) },
-                        onOpenJam = { tabOrdinal = Tab.JAM.ordinal },
-                        onOpenQueue = { showQueue = true },
-                        likedIds = likedIds,
-                        dislikedIds = dislikedIds,
-                        onToggleLike = onToggleLike,
-                        onToggleDislike = onToggleDislike,
-                        offline = offline,
-                        offlineReason = offlineReason,
-                        onRetry = onRetry,
-                        // Read straight from PlayLog: it changes as tracks
-                        // finish, and this composable already recomposes on
-                        // every player state change.
-                        recentlyPlayed = PlayLog.recentlyPlayedTracks(8),
-                        topPlayed = PlayLog.topPlayedTracks(12),
-                    )
-                    Tab.SEARCH -> SearchScreen(
-                        query = searchQuery,
-                        results = searchResults,
-                        currentTrackId = currentTrack?.id,
-                        isPlaying = isPlaying,
-                        onQueryChange = onQueryChange,
                         onStartRadio = { track -> PlayerManager.startRadio(track) },
                         likedIds = likedIds,
                         dislikedIds = dislikedIds,
                         onToggleLike = onToggleLike,
                         onToggleDislike = onToggleDislike,
+                        onShufflePlay = {
+                            // Start at a random track and turn shuffle on, which is
+                            // what "shuffle play" means on every music app.
+                            if (playlistTracks.isNotEmpty()) {
+                                PlayerManager.playQueue(playlistTracks, kotlin.random.Random.nextInt(playlistTracks.size))
+                                if (!shuffle) PlayerManager.toggleShuffle()
+                            }
+                        },
                     )
-                    Tab.LIBRARY -> LibraryScreen(
-                        playlists = playlists,
-                        onOpenPlaylist = { openPlaylistId = it.id },
-                        // Keyed on likedIds so liking a song while Library is
-                        // open actually updates the card: reading the store
-                        // directly is invisible to Compose.
-                        likedTracks = remember(likedIds) { TasteStore.likedTracks() },
-                        recentTracks = remember(currentIndex, isPlaying) {
-                            PlayLog.recentlyPlayedTracks(50)
-                        },
-                        onPlayLiked = {
-                            val liked = TasteStore.likedTracks()
-                            if (liked.isNotEmpty()) PlayerManager.playQueue(liked, 0)
-                        },
-                        onPlayRecent = {
-                            val recent = PlayLog.recentlyPlayedTracks(50)
-                            if (recent.isNotEmpty()) PlayerManager.playQueue(recent, 0)
-                        },
-                        currentTrackId = currentTrack?.id,
-                    )
-                    Tab.JAM -> JamScreen()
+                } else {
+                    when (tab) {
+                        Tab.HOME -> HomeScreen(
+                            tracks = tracks,
+                            playlists = playlists,
+                            currentTrackId = currentTrack?.id,
+                            isPlaying = isPlaying,
+                            onPlayTrack = playTrack,
+                            onOpenPlaylist = { openPlaylistId = it.id },
+                            onStartRadio = { track -> PlayerManager.startRadio(track) },
+                            onOpenJam = { tabOrdinal = Tab.JAM.ordinal },
+                            onOpenQueue = { showQueue = true },
+                            likedIds = likedIds,
+                            dislikedIds = dislikedIds,
+                            onToggleLike = onToggleLike,
+                            onToggleDislike = onToggleDislike,
+                            offline = offline,
+                            offlineReason = offlineReason,
+                            onRetry = onRetry,
+                            // Read straight from PlayLog: it changes as tracks
+                            // finish, and this composable already recomposes on
+                            // every player state change.
+                            recentlyPlayed = PlayLog.recentlyPlayedTracks(8),
+                            topPlayed = PlayLog.topPlayedTracks(12),
+                        )
+                        Tab.SEARCH -> SearchScreen(
+                            query = searchQuery,
+                            results = searchResults,
+                            currentTrackId = currentTrack?.id,
+                            isPlaying = isPlaying,
+                            onQueryChange = onQueryChange,
+                            onStartRadio = { track -> PlayerManager.startRadio(track) },
+                            likedIds = likedIds,
+                            dislikedIds = dislikedIds,
+                            onToggleLike = onToggleLike,
+                            onToggleDislike = onToggleDislike,
+                        )
+                        Tab.LIBRARY -> LibraryScreen(
+                            playlists = playlists,
+                            onOpenPlaylist = { openPlaylistId = it.id },
+                            // Keyed on likedIds so liking a song while Library is
+                            // open actually updates the card: reading the store
+                            // directly is invisible to Compose.
+                            likedTracks = remember(likedIds) { TasteStore.likedTracks() },
+                            recentTracks = remember(currentIndex, isPlaying) {
+                                PlayLog.recentlyPlayedTracks(50)
+                            },
+                            onPlayLiked = {
+                                val liked = TasteStore.likedTracks()
+                                if (liked.isNotEmpty()) PlayerManager.playQueue(liked, 0)
+                            },
+                            onPlayRecent = {
+                                val recent = PlayLog.recentlyPlayedTracks(50)
+                                if (recent.isNotEmpty()) PlayerManager.playQueue(recent, 0)
+                            },
+                            currentTrackId = currentTrack?.id,
+                        )
+                        Tab.JAM -> JamScreen()
+                    }
                 }
             }
         }
-    }
 
-    if (showQueue) {
+    } else if (showQueue) {
         QueueScreen(
             queue = queue,
             index = currentIndex,
@@ -283,9 +284,7 @@ fun MuziiNav(
             onMove = { from, to -> PlayerManager.moveItem(from, to) },
             onPlayNext = { PlayerManager.playNext(it) },
         )
-    }
-
-    if (showNowPlaying && currentTrack != null) {
+    } else if (currentTrack != null) {
         NowPlayingScreen(
             track = currentTrack,
             isPlaying = isPlaying,
@@ -298,10 +297,7 @@ fun MuziiNav(
             onPrev = { PlayerManager.prev() },
             onSeek = { PlayerManager.seekTo(it) },
             onClose = { showNowPlaying = false },
-            onOpenQueue = {
-                showNowPlaying = false
-                showQueue = true
-            },
+            onOpenQueue = { showQueue = true },
             liked = likedIds.contains(currentTrack.id),
             disliked = dislikedIds.contains(currentTrack.id),
             onToggleLike = { onToggleLike(currentTrack) },

@@ -3,15 +3,18 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- All artwork stays within the adaptive icon's central safe circle,
+         so rounded, circular and squircle launcher masks never crop the note. -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,78V38l34,-7v38"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="4" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M46,39 L73,33 L73,44 L50,49 L50,68 L46,68 Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,78m-9,0a9,9 0,1 0,18 0a9,9 0,1 0,-18 0" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M69,38 L73,38 L73,63 L69,63 Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M72,69m-9,0a9,9 0,1 0,18 0a9,9 0,1 0,-18 0" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M42,69 m-7,0 a7,6 0,1 0,14 0 a7,6 0,1 0,-14 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M65,63 m-7,0 a7,6 0,1 0,14 0 a7,6 0,1 0,-14 0" />
 </vector>

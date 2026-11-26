@@ -89,7 +89,7 @@ fun QueueScreen(
         if (index in queue.indices) listState.scrollToItem(index.coerceAtLeast(0))
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

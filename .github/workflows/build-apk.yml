@@ -146,6 +146,23 @@ jobs:
           fi
           echo "Signed with the stable Muzii key - in-place updates will work."
 
+      # Instrumentation tests run on an Android device/emulator; at least
+      # compile them on each PR so regressions cannot silently stop building.
+      - name: Compile Android UI tests
+        if: github.event_name == 'pull_request'
+        working-directory: android
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleDebugAndroidTest 2>&1 | tee /tmp/muzii-test-build.log
+      - name: Report UI test compilation errors
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if [ -f /tmp/muzii-test-build.log ]; then
+            python3 -c "from pathlib import Path; s=Path('/tmp/muzii-test-build.log').read_text()[-14000:]; print('::error title=Android test compilation::'+s.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))"
+          fi
+
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
